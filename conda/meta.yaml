@@ -51,6 +51,7 @@ test:
     - openalea.phenomenal.object
     - openalea.phenomenal.segmentation
     - openalea.phenomenal.tracking
+    - openalea.phenotyping_data
   requires:
     - pytest
   source_files:
