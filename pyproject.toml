@@ -99,6 +99,7 @@ channels = [
 # deps not available in pip with conda name
 dependencies = [
   "opencv",
+  "openalea.phenotyping_data"  # for notebooks data
 ]
 
 
