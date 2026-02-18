@@ -10,131 +10,64 @@
 
 
 import numpy
-import ipyvolume.pylab as ipyvolume
-
+import k3d
+import ipyvolume
 from ._order_color_map import order_color_map
 # ==============================================================================
 
 
-def plot_voxel(voxels_position, marker="box", color="green", size=2.0):
-    if len(voxels_position) > 0:
-        x, y, z = (voxels_position[:, 0].astype(float),
-                   voxels_position[:, 1].astype(float),
-                   voxels_position[:, 2].astype(float))
+def plot_voxel(voxels_position, color=0x00ff00, size=2.0):
+    plt_points = k3d.points(positions=voxels_position.astype(numpy.float32),
+                            point_size=size, color=color)
+    return plt_points
 
-        ipyvolume.scatter(x, y, z, size=size, marker=marker, color=color)
 
 def show_point_cloud(xyz_positions,
-                     color='green',
-                     size=2,
-                     width=500,
-                     height=500):
+                     color=0x00ff00,
+                     size=2):
 
-    ipyvolume.figure(width=width, height=height, controls=True, lighting=True)
-    plot_voxel(xyz_positions, size=size, color=color)
-
-    x_min = xyz_positions[:, 0].min()
-    x_max = xyz_positions[:, 0].max()
-    y_min = xyz_positions[:, 1].min()
-    y_max = xyz_positions[:, 1].max()
-    z_min = xyz_positions[:, 2].min()
-    z_max = xyz_positions[:, 2].max()
-
-    xyz_max = max(x_max - x_min, y_max - y_min, z_max - z_min)
-
-    ipyvolume.xlim(x_min, x_min + xyz_max)
-    ipyvolume.ylim(y_min, y_min + xyz_max)
-    ipyvolume.zlim(z_min, z_min + xyz_max)
-    ipyvolume.view(0, 90)
-    ipyvolume.show()
+    plot = k3d.plot()
+    plot += plot_voxel(xyz_positions, color, size)
+    plot.display()
 
 def show_voxel_grid(voxel_grid,
-                    color='green',
-                    size=2,
-                    width=500,
-                    height=500):
+                    color=0x00ff00,
+                    size=2):
 
-    ipyvolume.figure(width=width, height=height, controls=True, lighting=True)
-    plot_voxel(voxel_grid.voxels_position, size=size, color=color)
-
-    x_min = voxel_grid.voxels_position[:, 0].min()
-    x_max = voxel_grid.voxels_position[:, 0].max()
-    y_min = voxel_grid.voxels_position[:, 1].min()
-    y_max = voxel_grid.voxels_position[:, 1].max()
-    z_min = voxel_grid.voxels_position[:, 2].min()
-    z_max = voxel_grid.voxels_position[:, 2].max()
-
-    xyz_max = max(x_max - x_min, y_max - y_min, z_max - z_min)
-
-    ipyvolume.xlim(x_min, x_min + xyz_max)
-    ipyvolume.ylim(y_min, y_min + xyz_max)
-    ipyvolume.zlim(z_min, z_min + xyz_max)
-    ipyvolume.view(180, 90)
-    ipyvolume.show()
+    plot = k3d.plot()
+    plot += plot_voxel(voxel_grid.voxels_position, size=size, color=color)
+    plot.display()
 
 
-def show_mesh(vertices, faces, color="green", width=500, height=500):
-    ipyvolume.figure(width=width, height=height)
-    ipyvolume.view(180, 90)
-    ipyvolume.plot_trisurf(
-        vertices[:, 0], vertices[:, 1], vertices[:, 2], triangles=faces, color=color
-    )
-
-    x_min = vertices[:, 0].min()
-    x_max = vertices[:, 0].max()
-    y_min = vertices[:, 1].min()
-    y_max = vertices[:, 1].max()
-    z_min = vertices[:, 2].min()
-    z_max = vertices[:, 2].max()
-
-    xyz_max = max(x_max - x_min, y_max - y_min, z_max - z_min)
-
-    ipyvolume.xlim(x_min, x_min + xyz_max)
-    ipyvolume.ylim(y_min, y_min + xyz_max)
-    ipyvolume.zlim(z_min, z_min + xyz_max)
-
-    ipyvolume.show()
-
+def show_mesh(vertices, faces, color=0x00ff00):
+    mesh = k3d.mesh(vertices.astype(numpy.float32), indices=faces.astype(numpy.uint32), color=color)
+    plot = k3d.plot()
+    plot += mesh
+    return plot
 
 def show_skeleton(
     voxel_skeleton,
     size=2,
     with_voxel=True,
-    voxels_color="green",
-    polyline_color="red",
-    width=500,
-    height=500,
+    voxels_color=0x00ff00,
+    polyline_color=0xff0000,
 ):
-    ipyvolume.figure(width=width, height=height)
-    ipyvolume.view(180, 90)
-
+    plot = k3d.plot()
     if with_voxel:
         voxels_position = voxel_skeleton.voxels_position()
-        plot_voxel(voxels_position, size=size / 2, color=voxels_color)
+        plot += plot_voxel(voxels_position, size=size / 2, color=voxels_color)
 
     voxels_position = voxel_skeleton.voxels_position_polyline()
-    plot_voxel(voxels_position, size=size, color=polyline_color)
+    plot += plot_voxel(voxels_position, size=size, color=polyline_color)
 
     for vs in voxel_skeleton.segments:
-        for color, index in [("blue", 0), ("red", -1)]:
-            plot_voxel(
+        for color, index in [(0x0000ff, 0), (0xff0000, -1)]:
+            plot += plot_voxel(
                 numpy.array([vs.polyline[index]]),
                 size=size * 2,
-                marker="sphere",
                 color=color,
             )
-
-    x_min = voxels_position[:, 0].min()
-    x_max = voxels_position[:, 0].max()
-    y_min = voxels_position[:, 1].min()
-    y_max = voxels_position[:, 1].max()
-    z_min = voxels_position[:, 2].min()
-    z_max = voxels_position[:, 2].max()
-    xyz_max = max(x_max - x_min, y_max - y_min, z_max - z_min)
-    ipyvolume.xlim(x_min, x_min + xyz_max)
-    ipyvolume.ylim(y_min, y_min + xyz_max)
-    ipyvolume.zlim(z_min, z_min + xyz_max)
-    ipyvolume.show()
+    plot.display()
 
 
 def show_segmentation(voxel_segmentation, size=2.0, width=500, height=500):
