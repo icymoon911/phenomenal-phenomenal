@@ -66,6 +66,7 @@ dependencies = [
   "orjson",
   "skan",
   "ipyvolume",
+  "k3d",
 ]
 
 [project.optional-dependencies]
