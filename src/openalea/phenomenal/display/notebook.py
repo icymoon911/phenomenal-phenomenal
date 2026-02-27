@@ -10,23 +10,21 @@
 
 
 import k3d
-import numpy
+import numpy as np
 
 from ._order_color_map import order_color_map
 
 
 # ==============================================================================
 
-def rgb2hex(r,g,b):
-    """Convert an RGB value to an hex value"""
-    return (r << 16) | (g << 8) | b
+from matplotlib.colors import rgb2hex
 
 def plot_voxel(voxels, color=0x00ff00):
-    plt_voxels = k3d.voxels(voxels.astype(numpy.uint8), color_map=color)
+    plt_voxels = k3d.voxels(voxels.astype(np.uint8), color_map=color)
     return plt_voxels
 
 def plot_points(voxels_position, color=0x00ff00, size=2.0):
-    plt_points = k3d.points(positions=voxels_position.astype(numpy.float32),
+    plt_points = k3d.points(positions=voxels_position.astype(np.float32),
                             point_size=size, color=color)
     return plt_points
 
@@ -35,7 +33,7 @@ def show_point_cloud(xyz_positions,
                      size=2):
 
     plot = k3d.plot()
-    plot += k3d.points(positions=xyz_positions.astype(numpy.float32),
+    plot += k3d.points(positions=xyz_positions.astype(np.float32),
                     point_size=size, color=color)
     plot.display()
 
@@ -49,7 +47,15 @@ def show_voxel_grid(voxel_grid,
 
 
 def show_mesh(vertices, faces, color=0x00ff00):
-    mesh = k3d.mesh(vertices.astype(numpy.float32), indices=faces.astype(numpy.uint32), color=color)
+    if type(color) == np.ndarray:
+        colors = []
+        for c in color:
+            hex_col = int(rgb2hex(c / 255.0).replace("#",""), 16)
+            colors.append(hex_col)
+
+        mesh = k3d.mesh(vertices.astype(np.float32), indices=faces.astype(np.uint32), colors=colors)
+    else:
+        mesh = k3d.mesh(vertices.astype(np.float32), indices=faces.astype(np.uint32), color=color)
     plot = k3d.plot()
     plot += mesh
     return plot
@@ -72,7 +78,7 @@ def show_skeleton(
     for vs in voxel_skeleton.segments:
         for color, index in [(0x0000ff, 0), (0xff0000, -1)]:
             plot += plot_points(
-                numpy.array([vs.polyline[index]]),
+                np.array([vs.polyline[index]]),
                 size=size * 2,
                 color=color,
             )
@@ -99,9 +105,9 @@ def show_segmentation(voxel_segmentation, size=2.0):
         return color
 
     for vo in voxel_segmentation.voxel_organs:
-        voxels_position = numpy.array(list(map(tuple, list(vo.voxels_position()))))
-        vo_color = get_color(vo.label, vo.info)
-        plot += plot_points(voxels_position, size=size * 1, color=rgb2hex(vo_color[0],vo_color[1],vo_color[2]))
+        voxels_position = np.array(list(map(tuple, list(vo.voxels_position()))))
+        vo_color = int(rgb2hex(np.array(get_color(vo.label, vo.info)) / 255.0).replace("#", ""), 16)
+        plot += plot_points(voxels_position, size=size * 1, color=vo_color)
 
         if (
             (vo.label == "mature_leaf" or vo.label == "growing_leaf")
@@ -109,13 +115,13 @@ def show_segmentation(voxel_segmentation, size=2.0):
             and "pm_position_tip" in vo.info
         ):
             plot += plot_points(
-                numpy.array([vo.info["pm_position_tip"]]),
+                np.array([vo.info["pm_position_tip"]]),
                 size=size * 2,
                 color=0xff0000,
             )
 
             plot += plot_points(
-                numpy.array([vo.info["pm_position_base"]]),
+                np.array([vo.info["pm_position_base"]]),
                 size=size * 2,
                 color=0x0000ff,
             )
@@ -125,19 +131,19 @@ def show_segmentation(voxel_segmentation, size=2.0):
 def show_synthetic_plant(
     vertices, faces, meta_data=None, size=0.5, color=0x00ff00):
     plot = k3d.plot()
-    plot += k3d.mesh(vertices.astype(numpy.float32), indices=faces.astype(numpy.uint32), color=color)
+    plot += k3d.mesh(vertices.astype(np.float32), indices=faces.astype(np.uint32), color=color)
 
     if meta_data is not None:
         ranks = meta_data["leaf_order"]
         polylines = {
-            n: list(map(numpy.array, list(zip(*meta_data["leaf_polylines"][i]))))
+            n: list(map(np.array, list(zip(*meta_data["leaf_polylines"][i]))))
             for i, n in enumerate(ranks)
         }
 
         voxels = set()
         for leaf_order in polylines:
             x, y, z, r = polylines[leaf_order]
-            polyline = numpy.array(list(zip(x, y, z))) * 10 - numpy.array([0, 0, 750])
+            polyline = np.array(list(zip(x, y, z))) * 10 - np.array([0, 0, 750])
 
             plot+= plot_points(polyline, size=size, color=0xff0000)
             voxels = voxels.union(set(map(tuple, list(polyline))))
