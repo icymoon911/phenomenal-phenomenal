@@ -157,7 +157,8 @@ def split_voxels_in_eight(voxels):
     a8 = numpy.column_stack((x_plus, y_plus, z_plus))
 
     return Voxels(
-        numpy.concatenate((a1, a2, a3, a4, a5, a6, a7, a8), axis=0), voxels.size / 2.0
+        numpy.concatenate((a1, a2, a3, a4, a5, a6, a7, a8), axis=0),
+        voxels.size / 2.0
     )
 
 
@@ -293,7 +294,7 @@ def voxels_is_visible_in_image(
 
 
 def kept_visible_voxel(
-    voxels_position, voxels_size, image_views, error_tolerance=0, int_images=None
+    voxels_position, voxels_size, image_views, error_tolerance=0, int_images=None, return_inconsistent=True
 ):
     """
     Kept in a new collections.deque the voxel who is visible on each image of
@@ -338,12 +339,13 @@ def kept_visible_voxel(
 
         cond = photo_consistent >= i + 1 - error_tolerance
 
-        if no_kept is None:
-            no_kept = voxels_position[numpy.logical_not(cond)]
-        else:
-            no_kept = numpy.insert(
-                no_kept, 0, voxels_position[numpy.logical_not(cond)], axis=0
-            )
+        if return_inconsistent:
+            if no_kept is None:
+                no_kept = voxels_position[numpy.logical_not(cond)]
+            else:
+                no_kept = numpy.insert(
+                    no_kept, 0, voxels_position[numpy.logical_not(cond)], axis=0
+                )
 
         voxels_position = voxels_position[cond]
         photo_consistent = photo_consistent[cond]
@@ -556,6 +558,10 @@ def reconstruction_3d(
     if len(image_views) == 0:
         raise ValueError("Len images view have not length")
 
+    return_inconsistent = False
+    if have_image_ref(image_views):
+        return_inconsistent = True
+
     if voxels_position is None:
         voxels_position = numpy.array([voxel_center_origin])
 
@@ -592,6 +598,7 @@ def reconstruction_3d(
                 image_views,
                 error_tolerance=error_tolerance,
                 int_images=int_images,
+                return_inconsistent=return_inconsistent
             )
         else:
             stage = VoxelsStage(voxels, None)
