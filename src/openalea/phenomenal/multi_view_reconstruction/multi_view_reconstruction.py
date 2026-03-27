@@ -16,8 +16,6 @@ import scipy.spatial
 import numpy
 import sklearn.neighbors
 
-import openalea.phenomenal.multi_view_reconstruction._c_mvr as c_mvr
-
 from ..object import VoxelGrid
 
 # ==============================================================================
@@ -28,6 +26,12 @@ VoxelsStage = collections.namedtuple("VoxelsStage", ["consistent", "inconsistent
 
 
 # ==============================================================================
+
+def integral_image(input_array):
+    binary = (input_array > 0).astype(numpy.uint8)
+    integral = cv2.integral(binary, sdepth=cv2.CV_32S)
+    return integral[1:, 1:]
+
 
 
 def get_voxels_corners(voxels_position, voxels_size):
@@ -570,8 +574,7 @@ def reconstruction_3d(
 
     int_images = []
     for i, image_view in enumerate(image_views):
-        a = numpy.zeros_like(image_view.image, dtype=numpy.uint32)
-        c_mvr.integral_image(image_view.image, a)
+        a = integral_image(image_view.image)
         int_images.append(a)
 
     stage = VoxelsStage(Voxels(voxels_position, list_voxels_size[0]), None)
