@@ -13,8 +13,17 @@
 
 
 class ImageView:
+    def __init__(self, image, projection, name=None):
+        self.image = image
+        self.name = name
+        self.projection = projection
+        self.integral = None
+
+class OldImageView:
     def __init__(self, image, projection, inclusive=False, image_ref=None):
         self.image = image
         self.projection = projection
         self.inclusive = inclusive
         self.image_ref = image_ref
+        self.integral = None
+        self.name = None

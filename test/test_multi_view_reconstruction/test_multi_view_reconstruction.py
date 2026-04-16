@@ -18,8 +18,8 @@ import openalea.phenomenal.object as phm_obj
 import openalea.phenomenal.multi_view_reconstruction as phm_mvr
 
 from pathlib import Path
-test_subdir = Path(__file__).parent if '__file__' in globals() else Path(".").resolve()
-data_dir = test_subdir.parent / "data" / "plant_1"
+test_subdir = Path(__file__).parent.parent if '__file__' in globals() else Path(".").resolve()
+data_dir = test_subdir / "data" / "plant_1"
 
 # ==============================================================================
 
@@ -189,7 +189,11 @@ def get_image_views_cube_projected(with_ref=False):
             if angle == 90:
                 image_ref = img
 
-        iv = phm_obj.ImageView(img, projection, inclusive=False, image_ref=image_ref)
+        if with_ref:
+            iv = phm_obj.OldImageView(img, projection, inclusive=False, image_ref=image_ref)
+        else:
+            iv = phm_obj.ImageView(img, projection)
+            
         image_views.append(iv)
 
     return image_views
@@ -206,9 +210,7 @@ def test_reconstruction_3d_1():
             projection = calibrations[id_camera].get_projection(angle)
             iv = phm_obj.ImageView(
                 bin_images[id_camera][angle],
-                projection,
-                inclusive=False,
-                image_ref=None,
+                projection
             )
             image_views.append(iv)
 
@@ -242,7 +244,7 @@ def test_reconstruction_3d_3():
     error_tolerance = 0
 
     image_views = get_image_views_cube_projected(with_ref=with_ref)
-    vg = phm_mvr.reconstruction_3d(
+    vg = phm_mvr.reconstruction_3d_neighbours(
         image_views, voxels_size=voxels_size, error_tolerance=error_tolerance
     )
 
