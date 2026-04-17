@@ -14,7 +14,7 @@ import collections
 import numpy
 import sklearn.neighbors
 
-from .multi_view_reconstruction import Voxels, integral_image, get_bounding_box_voxel_projected, split_voxels_in_eight, voxels_is_visible_in_image, project_voxel_centers_on_image
+from .multi_view_reconstruction import Voxels, integral_image, check_each, get_bounding_box_voxel_projected, split_voxels_in_eight, voxels_is_visible_in_image, project_voxel_centers_on_image
 from ..object import VoxelGrid
 
 # ==============================================================================
@@ -24,8 +24,7 @@ VoxelsStage = collections.namedtuple("VoxelsStage", ["consistent", "inconsistent
 
 
 def kept_visible_voxel(
-    voxels_position, voxels_size, image_views, error_tolerance=0, int_images=None
-):
+    voxels_position, voxels_size, image_views, error_tolerance=0):
     """
     Kept in a new collections.deque the voxel who is visible on each image of
     images_projections according the error_tolerance
@@ -47,7 +46,6 @@ def kept_visible_voxel(
     error_tolerance : int, optional
         Number of image will be ignored if the projected voxel is not visible.
 
-    int_images: Integral image of the binary image (optimization)
 
     Returns
     -------
@@ -64,7 +62,7 @@ def kept_visible_voxel(
             image_view.image,
             image_view.projection,
             image_view.inclusive,
-            image_int=int_images[i],
+            image_view.integral,
         )
 
         cond = photo_consistent >= i + 1 - error_tolerance
@@ -231,6 +229,8 @@ def reconstruction_3d_neighbours(
     start_voxel_size=4096,
     voxels_position=None,
     attractor=None,
+    clear_outside=True,
+    reference_views=None
 ):
     """
     Construct a list of voxel represented object with positive value on binary
@@ -279,11 +279,13 @@ def reconstruction_3d_neighbours(
 
     # Pre-processing (optimization): Compute integral image for speed
     # computation
-
-    int_images = []
-    for i, image_view in enumerate(image_views):
-        a = integral_image(image_view.image)
-        int_images.append(a)
+    clear_view = check_each(image_views, clear_outside)
+    is_image_ref = check_each(image_views, reference_views)
+    for i, (clear, is_ref, image_view) in enumerate(zip(clear_view, is_image_ref, image_views)):
+        if image_view.integral is None:
+            image_view.integral = integral_image(image_view.image)
+        image_view.inclusive = not clear
+        image_view.image_ref = None if not is_ref else image_view.image
 
     stage = VoxelsStage(Voxels(voxels_position, list_voxels_size[0]), None)
     stages = [stage]
@@ -301,8 +303,7 @@ def reconstruction_3d_neighbours(
                 voxels.position,
                 voxels.size,
                 image_views,
-                error_tolerance=error_tolerance,
-                int_images=int_images,
+                error_tolerance=error_tolerance
             )
         else:
             stage = VoxelsStage(voxels, None)

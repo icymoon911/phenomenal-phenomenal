@@ -158,7 +158,7 @@ def test_split_and_projection():
 # ==============================================================================
 
 
-def get_image_views_cube_projected(with_ref=False):
+def get_image_views_cube_projected():
     # ==========================================================================
     # Create object
     voxels_size = 10
@@ -181,25 +181,13 @@ def get_image_views_cube_projected(with_ref=False):
         img = phm_mvr.project_voxel_centers_on_image(
             voxels_position, voxels_size, shape_image, projection
         )
-
-        image_ref = None
-        if with_ref:
-            if angle == 0:
-                img[:] = 0
-            if angle == 90:
-                image_ref = img
-
-        if with_ref:
-            iv = phm_obj.OldImageView(img, projection, inclusive=False, image_ref=image_ref)
-        else:
-            iv = phm_obj.ImageView(img, projection)
-
+        iv = phm_obj.ImageView(img, projection, f'side_{angle}')
         image_views.append(iv)
 
     return image_views
 
 
-def test_reconstruction_3d_1():
+def test_reconstruction_3d_plant1():
     # Load images binarize
     bin_images = phm_data.bin_images(data_dir)
     calibrations = phm_data.calibrations(data_dir)
@@ -214,21 +202,19 @@ def test_reconstruction_3d_1():
             )
             image_views.append(iv)
 
-    voxels_size = 64
-    error_tolerance = 0
     vg = phm_mvr.reconstruction_3d(
-        image_views, voxels_size=voxels_size, error_tolerance=error_tolerance
-    )
-
+        image_views, voxels_size=64, error_tolerance=0)
+    assert len(vg.voxels_position) > 0
+    vg = phm_mvr.reconstruction_3d(
+        image_views, voxels_size=64, error_tolerance=-1)
     assert len(vg.voxels_position) > 0
 
 
-def test_reconstruction_3d_2():
-    with_ref = False
+def test_reconstruction_3d_cube():
     voxels_size = 20
     error_tolerance = 0
 
-    image_views = get_image_views_cube_projected(with_ref=with_ref)
+    image_views = get_image_views_cube_projected()
 
     vg = phm_mvr.reconstruction_3d(
         image_views, voxels_size=voxels_size, error_tolerance=error_tolerance
@@ -238,14 +224,16 @@ def test_reconstruction_3d_2():
     false_positive, true_negative = phm_mvr.reconstruction_error(vg, image_views)
 
 
-def test_reconstruction_3d_3():
-    with_ref = True
+def test_reconstruction_3d_neighbours():
     voxels_size = 40
     error_tolerance = 0
 
-    image_views = get_image_views_cube_projected(with_ref=with_ref)
+    image_views = get_image_views_cube_projected()
+    for iv in image_views:
+        if iv.name == 'side_0':
+            iv.image[:] = 0
     vg = phm_mvr.reconstruction_3d_neighbours(
-        image_views, voxels_size=voxels_size, error_tolerance=error_tolerance
+        image_views, voxels_size=voxels_size, error_tolerance=error_tolerance, reference_views=['side_90']
     )
 
     assert len(vg.voxels_position) > 0

@@ -13,7 +13,7 @@ import collections
 import math
 import numpy
 
-from .multi_view_reconstruction import get_bounding_box_voxel_projected
+from .multi_view_reconstruction import check_each, get_bounding_box_voxel_projected
 from ..object import VoxelOctree
 # ==============================================================================
 # Function for no kep
@@ -198,6 +198,7 @@ def reconstruction_3d_octree(
     error_tolerance=0,
     voxel_center_origin=(0.0, 0.0, 0.0),
     world_size=4096,
+    clear_outside=True,
     verbose=False,
 ):
     """
@@ -241,6 +242,10 @@ def reconstruction_3d_octree(
 
     if len(image_views) == 0:
         raise ValueError("Len images view have not length")
+
+    clear_view = check_each(image_views, clear_outside)
+    for i, (clear, image_view) in enumerate(zip(clear_view, image_views)):
+        image_view.inclusive = not clear
 
     voxel_octree = VoxelOctree.from_position(voxel_center_origin, world_size, True)
 

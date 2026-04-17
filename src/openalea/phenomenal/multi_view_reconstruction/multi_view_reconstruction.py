@@ -322,22 +322,26 @@ def reconstruction_grid(center=(0.0, 0.0, 0.0), grid_size=4096, voxel_size=512):
     return voxels
 
 
+def check_each(image_views, check=True):
+    checks = [False] * len(image_views)
+    if check is True:
+        checks = [True] * len(image_views)
+    elif check is not False:
+        if isinstance(check, str):
+            check = [check]
+        for i, image_view in enumerate(image_views):
+            if image_view.name is not None:
+                for cam in check:
+                    if image_view.name.startswith(cam):
+                        checks[i] = True
+                        break
+    return checks
+
+
 def filter_voxels(voxels, image_views, error_tolerance=0, clear_outside=True):
     """Filter voxels, keeping the one photo_consistent with all minus error_tolerance images in image_views"""
 
-    clear_view = [False] * len(image_views)
-    if clear_outside is True:
-        clear_view = [True] * len(image_views)
-    else:
-        if isinstance(clear_outside, str):
-            clear_outside = [clear_outside]
-        for i, image_view in enumerate(image_views):
-            if image_view.name is not None:
-                for cam in clear_outside:
-                    if image_view.name.startswith(cam):
-                        clear_view[i] = True
-                        break
-
+    clear_view = check_each(image_views, clear_outside)
     photo_consistent_score = numpy.zeros((len(voxels.position),), dtype=int)
     for i, (image_view, clear) in enumerate(zip(image_views, clear_view)):
         if image_view.integral is None:

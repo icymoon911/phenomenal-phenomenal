@@ -29,7 +29,7 @@ Data Structure
 # ==============================================================================
 
 
-from .imageView import ImageView, OldImageView
+from .imageView import ImageView
 from .image3D import Image3D
 from .voxelOctree import VoxelOctree
 from .voxelGrid import VoxelGrid
