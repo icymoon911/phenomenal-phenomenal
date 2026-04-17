@@ -207,11 +207,9 @@ def reconstruction_3d_octree(
 
     Parameters
     ----------
-    images_projections : [(image, projection), ...]
-        List of tuple (image, projection) where image is a binary image
-        (numpy.ndarray) and function projection (function (x, y, z) -> (x, y))
-        who take (x, y, z) position on return (x, y) position according space
-        representation of this image
+    image_views : {name: ImageView, ...}
+        Dict of phenomenal.object.ImageView objects gathering image, projection, where image is a binary image
+        (numpy.ndarray) and projection a function projecting (x, y, z) ->  (u, v) coordinate on image
 
     voxels_size : float, optional
         Size of side geometry of voxel that each voxel will have
@@ -228,6 +226,11 @@ def reconstruction_3d_octree(
     voxel_centers : collections.deque, optional
         List of first original voxel who will be split. If None, a list is
         create with the voxel_center_origin value.
+
+    clear_outside: bool | str | [str,...], optional
+        Should voxels projected outside image_views be kept ? True (default) or False set a unique rule for all views.
+        if a list of name is provided, only image_views whose key starts with names are used to clear voxels
+
 
     verbose : bool, optional
         If True, print for each iteration of split, number of voxel before and

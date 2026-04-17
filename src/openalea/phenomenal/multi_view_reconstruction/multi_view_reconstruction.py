@@ -323,6 +323,16 @@ def reconstruction_grid(center=(0.0, 0.0, 0.0), grid_size=4096, voxel_size=512):
 
 
 def check_each(image_views, check=True):
+    """Return a check dict for all keys in image_views according to check
+
+    Args:
+        image_views : {name: ImageView, ...}
+         Dict of phenomenal.object.ImageView objects gathering image, projection, where image is a binary image
+         (numpy.ndarray) and projection a function projecting (x, y, z) ->  (u, v) coordinate on image
+        check: bool | str | [str,...]
+         If True or False, the value associated to each key present in image_views. If a list of name,
+         the names to be set to True
+    """
     if isinstance(check, bool):
         return {k: check for k in image_views}
 
@@ -431,29 +441,29 @@ def reconstruction_3d(
     Parameters
     ----------
 
-    image_views : [(image, projection), ...]
-        List of tuple (image, projection) where image is a binary image
-        (numpy.ndarray) and function projection (function (x, y, z) -> (x, y))
-        who take (x, y, z) position on return (x, y) position according space
-        representation of this image
+    image_views : {name: ImageView, ...}
+        Dict of phenomenal.object.ImageView objects gathering image, projection, where image is a binary image
+        (numpy.ndarray) and projection a function projecting (x, y, z) ->  (u, v) coordinate on image
 
     voxels_size : float, optional
-        Diameter size of the voxels
+        Edge length of reconstructed voxels
 
     error_tolerance : int, optional
-        Determine the number of inconsistent image-reprojections tolerated per voxels during reconstruction
-        If not provided the reconstruction is fully consistent with all images (error_tolerance=0)
-        If negative, the 3d reconstruction will iteratively aggregate reconstructions, starting from zero tolerance,
-        up to abs(error_tolerance), with iterative filtering of voxels that project on projections of already reconstructed ones
-    voxel_center_origin : (x, y, z), optional
-        Center position of the first original voxel, who will be split.
+        Control the degree of consistency of the reconstructed object with its projected views
+        If not provided the reconstruction is fully consistent with all views (error_tolerance=0)
+        If positive, the number of inconsistent views tolerated per voxel
+        If negative, a composite 3d reconstruction is computed, iteratively aggregating reconstructions of different
+        tolerance, from zero to abs(error_tolerance), discarding at each step voxels projecting on projections of
+        already reconstructed
 
-    start_voxel_size: int, optional
-        Minimum size that the origin voxel size must include at beginning
+    start : VoxelGrid | [Voxel,..], optional
+        A voxel grid to be used as starting point.
+        If None (default), a grid returned by defaults of openalea.phenomenal.multiview_reconstruction.reconstruction_grid
 
-    voxels_position : numpy.ndarray, optional
-        List of first original voxel who will be split. If None, a list is
-        created with the voxel_center_origin value.
+    clear_outside: bool | str | [str,...], optional
+        Should voxels projected outside image_views be kept ? True (default) or False set a unique rule for all views.
+        if a list of name is provided, only image_views whose key starts with names are used to clear voxels
+
 
     Returns
     -------

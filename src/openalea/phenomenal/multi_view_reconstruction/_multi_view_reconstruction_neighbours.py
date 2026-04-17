@@ -239,16 +239,16 @@ def reconstruction_3d_neighbours(
     Parameters
     ----------
 
-    image_views : [(image, projection), ...]
-        List of tuple (image, projection) where image is a binary image
-        (numpy.ndarray) and function projection (function (x, y, z) -> (x, y))
-        who take (x, y, z) position on return (x, y) position according space
-        representation of this image
+    image_views : {name: ImageView, ...}
+        Dict of phenomenal.object.ImageView objects gathering image, projection, where image is a binary image
+        (numpy.ndarray) and projection a function projecting (x, y, z) ->  (u, v) coordinate on image
+
 
     voxels_size : float, optional
         Diameter size of the voxels
 
     error_tolerance : int, optional
+        the number of inconsistent views tolerated per voxel
 
     voxel_center_origin : (x, y, z), optional
         Center position of the first original voxel, who will be split.
@@ -259,6 +259,17 @@ def reconstruction_3d_neighbours(
     voxels_position : numpy.ndarray, optional
         List of first original voxel who will be split. If None, a list is
         created with the voxel_center_origin value.
+
+    attractor: optional, the attractor given to sklearn.nearest_neighbours function
+
+    clear_outside: bool | str | [str,...], optional
+        Should voxels projected outside image_views be kept ? True (default) or False set a unique rule for all views.
+        if a list of name is provided, only image_views whose key starts with names are used to clear voxels
+
+    reference_views: bool | str | [str,...], optional
+        List the views to be considered as reference ones for colonisation by neighbours during reconstruction
+        If None (default) simple reconstruction is done, without neighbours colonisation
+
 
     Returns
     -------
