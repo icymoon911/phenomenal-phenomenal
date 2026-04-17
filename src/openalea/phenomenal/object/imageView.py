@@ -13,9 +13,8 @@
 
 
 class ImageView:
-    def __init__(self, image, projection, name=None):
+    def __init__(self, image, projection):
         self.image = image
-        self.name = name
         self.projection = projection
         self.integral = None
 

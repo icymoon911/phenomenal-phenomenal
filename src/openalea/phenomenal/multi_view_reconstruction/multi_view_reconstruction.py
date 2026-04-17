@@ -323,19 +323,15 @@ def reconstruction_grid(center=(0.0, 0.0, 0.0), grid_size=4096, voxel_size=512):
 
 
 def check_each(image_views, check=True):
-    checks = [False] * len(image_views)
-    if check is True:
-        checks = [True] * len(image_views)
-    elif check is not False:
-        if isinstance(check, str):
-            check = [check]
-        for i, image_view in enumerate(image_views):
-            if image_view.name is not None:
-                for cam in check:
-                    if image_view.name.startswith(cam):
-                        checks[i] = True
-                        break
-    return checks
+    if isinstance(check, bool):
+        return {k: check for k in image_views}
+
+    check = [check] if isinstance(check, str) else check
+
+    return {
+        name: any(name.startswith(cam) for cam in check)
+        for name in image_views
+    }
 
 
 def filter_voxels(voxels, image_views, error_tolerance=0, clear_outside=True):
@@ -343,10 +339,10 @@ def filter_voxels(voxels, image_views, error_tolerance=0, clear_outside=True):
 
     clear_view = check_each(image_views, clear_outside)
     photo_consistent_score = numpy.zeros((len(voxels.position),), dtype=int)
-    for i, (image_view, clear) in enumerate(zip(image_views, clear_view)):
+    for i, (k, image_view) in enumerate(image_views.items()):
         if image_view.integral is None:
             image_view.integral = integral_image(image_view.image)
-        inclusive = not clear
+        inclusive = not clear_view[k]
         photo_consistent_score += voxels_is_visible_in_image(
             voxels.position,
             voxels.size,
@@ -383,8 +379,8 @@ def tolerant_reconstruction(image_views, voxels_size=4, error_tolerance=0, clear
 def multi_tolerant_reconstruction(image_views, voxels_size=4, max_tolerance=0, clear_outside=None, start=None):
     voxels = tolerant_reconstruction(image_views, voxels_size=voxels_size, error_tolerance=0, clear_outside=clear_outside,
                                      start=start)
-    not_reconstructed = []
-    for iv in image_views:
+    not_reconstructed = {}
+    for k, iv in image_views.items():
         projected = project_voxel_centers_on_image(
             voxels.position,
             voxels.size,
@@ -393,7 +389,7 @@ def multi_tolerant_reconstruction(image_views, voxels_size=4, max_tolerance=0, c
         )
         view = ImageView(numpy.logical_not(projected)*255,
                             iv.projection)
-        not_reconstructed.append(view)
+        not_reconstructed[k] = view
 
     for i in range(max_tolerance):
         new_voxels = reconstruction_grid()
@@ -407,14 +403,14 @@ def multi_tolerant_reconstruction(image_views, voxels_size=4, max_tolerance=0, c
         if len(new_voxels.position) == 0:
             break
 
-        for j, iv in enumerate(image_views):
+        for k, iv in image_views.items():
             projected = project_voxel_centers_on_image(
                 new_voxels.position,
                 new_voxels.size,
                 iv.image.shape,
                 iv.projection,
             )
-            not_reconstructed[j].image *= numpy.logical_not(projected)
+            not_reconstructed[k].image *= numpy.logical_not(projected)
 
         voxels = Voxels(numpy.concatenate((voxels.position, new_voxels.position), axis=0), voxels.size)
 
@@ -635,7 +631,7 @@ def reconstruction_error(voxels_grid, image_views):
 
     sum_false_positive = 0
     sum_false_negative = 0
-    for image_view in image_views:
+    for image_view in image_views.values():
         img_src = project_voxel_centers_on_image(
             voxels_grid.voxels_position,
             voxels_grid.voxels_size,

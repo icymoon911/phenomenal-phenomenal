@@ -244,8 +244,8 @@ def reconstruction_3d_octree(
         raise ValueError("Len images view have not length")
 
     clear_view = check_each(image_views, clear_outside)
-    for i, (clear, image_view) in enumerate(zip(clear_view, image_views)):
-        image_view.inclusive = not clear
+    for k, image_view in image_views.items():
+        image_view.inclusive = not clear_view[k]
 
     voxel_octree = VoxelOctree.from_position(voxel_center_origin, world_size, True)
 
@@ -267,7 +267,7 @@ def reconstruction_3d_octree(
             print("Iteration", i + 1, "/", nb_iteration, end="")
             print(" : ", len(leaf_nodes), end="")
 
-        leaf_nodes = _keep_visible(leaf_nodes, image_views, error_tolerance)
+        leaf_nodes = _keep_visible(leaf_nodes, image_views.values(), error_tolerance)
 
         # Gain time is not enough for keeping that
         # if i + 1 < nb_iteration:

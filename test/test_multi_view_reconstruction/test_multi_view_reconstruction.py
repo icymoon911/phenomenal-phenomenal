@@ -174,15 +174,15 @@ def get_image_views_cube_projected():
     calibrations = phm_data.calibrations(data_dir)
 
     shape_image = (2454, 2056)
-    image_views = list()
+    image_views = dict()
     for angle in range(0, 360, 30):
         projection = calibrations["side"].get_projection(angle)
 
         img = phm_mvr.project_voxel_centers_on_image(
             voxels_position, voxels_size, shape_image, projection
         )
-        iv = phm_obj.ImageView(img, projection, f'side_{angle}')
-        image_views.append(iv)
+        iv = phm_obj.ImageView(img, projection)
+        image_views[f'side_{angle}'] = iv
 
     return image_views
 
@@ -192,7 +192,7 @@ def test_reconstruction_3d_plant1():
     bin_images = phm_data.bin_images(data_dir)
     calibrations = phm_data.calibrations(data_dir)
 
-    image_views = list()
+    image_views = dict()
     for id_camera in bin_images:
         for angle in bin_images[id_camera]:
             projection = calibrations[id_camera].get_projection(angle)
@@ -200,7 +200,8 @@ def test_reconstruction_3d_plant1():
                 bin_images[id_camera][angle],
                 projection
             )
-            image_views.append(iv)
+            name = f'{id_camera}_{angle}'
+            image_views[name] = iv
 
     vg = phm_mvr.reconstruction_3d(
         image_views, voxels_size=64, error_tolerance=0)
@@ -229,9 +230,7 @@ def test_reconstruction_3d_neighbours():
     error_tolerance = 0
 
     image_views = get_image_views_cube_projected()
-    for iv in image_views:
-        if iv.name == 'side_0':
-            iv.image[:] = 0
+    image_views['side_0'].image[:] = 0
     vg = phm_mvr.reconstruction_3d_neighbours(
         image_views, voxels_size=voxels_size, error_tolerance=error_tolerance, reference_views=['side_90']
     )

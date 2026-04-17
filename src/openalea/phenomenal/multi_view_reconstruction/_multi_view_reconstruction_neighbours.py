@@ -281,11 +281,11 @@ def reconstruction_3d_neighbours(
     # computation
     clear_view = check_each(image_views, clear_outside)
     is_image_ref = check_each(image_views, reference_views)
-    for i, (clear, is_ref, image_view) in enumerate(zip(clear_view, is_image_ref, image_views)):
+    for k, image_view in image_views.items():
         if image_view.integral is None:
             image_view.integral = integral_image(image_view.image)
-        image_view.inclusive = not clear
-        image_view.image_ref = None if not is_ref else image_view.image
+        image_view.inclusive = not clear_view[k]
+        image_view.image_ref = None if not is_image_ref[k] else image_view.image
 
     stage = VoxelsStage(Voxels(voxels_position, list_voxels_size[0]), None)
     stages = [stage]
@@ -302,7 +302,7 @@ def reconstruction_3d_neighbours(
             stage = kept_visible_voxel(
                 voxels.position,
                 voxels.size,
-                image_views,
+                image_views.values(),
                 error_tolerance=error_tolerance
             )
         else:
@@ -311,9 +311,9 @@ def reconstruction_3d_neighbours(
         stages.append(stage)
 
     consistent_stages = [stage.consistent for stage in stages]
-    if have_image_ref(image_views):
+    if have_image_ref(image_views.values()):
         consistent_stages = reconstruction_inconsistent(
-            image_views, stages, attractor=attractor
+            image_views.values(), stages, attractor=attractor
         )
 
     return VoxelGrid(consistent_stages[-1].position, consistent_stages[-1].size)
