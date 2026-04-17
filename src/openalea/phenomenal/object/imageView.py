@@ -19,6 +19,7 @@ class ImageView:
         self.projection = projection
         self.integral = None
 
+
 class OldImageView:
     def __init__(self, image, projection, inclusive=False, image_ref=None):
         self.image = image

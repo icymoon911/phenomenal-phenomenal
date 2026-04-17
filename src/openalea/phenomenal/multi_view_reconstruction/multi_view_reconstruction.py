@@ -322,33 +322,27 @@ def reconstruction_grid(center=(0.0, 0.0, 0.0), grid_size=4096, voxel_size=512):
     return voxels
 
 
-def filter_voxels(voxels, image_views, error_tolerance=0, trim_outside=None, return_inconsistent=False):
+def filter_voxels(voxels, image_views, error_tolerance=0, clear_outside=True):
     """Filter voxels, keeping the one photo_consistent with all minus error_tolerance images in image_views"""
 
-    trim = []
-    if trim_outside is not None:
-        if isinstance(trim_outside, str):
-            trim=[trim_outside]
-        else:
-            trim = trim_outside
-
-    inclusiveness = [True] * len(image_views)
-    for i, image_view in enumerate(image_views):
-        if image_view.integral is None:
-            image_view.integral = integral_image(image_view.image)
-        if image_view.name is not None:
-            for cam in trim:
-                if image_view.name.startswith(cam):
-                    inclusiveness[i] = False
-                    break
-        else:
-            inclusiveness[i] = False
-
-    if return_inconsistent:
-        inconsistent_position = None
+    clear_view = [False] * len(image_views)
+    if clear_outside is True:
+        clear_view = [True] * len(image_views)
+    else:
+        if isinstance(clear_outside, str):
+            clear_outside = [clear_outside]
+        for i, image_view in enumerate(image_views):
+            if image_view.name is not None:
+                for cam in clear_outside:
+                    if image_view.name.startswith(cam):
+                        clear_view[i] = True
+                        break
 
     photo_consistent_score = numpy.zeros((len(voxels.position),), dtype=int)
-    for i, (image_view, inclusive) in enumerate(zip(image_views, inclusiveness)):
+    for i, (image_view, clear) in enumerate(zip(image_views, clear_view)):
+        if image_view.integral is None:
+            image_view.integral = integral_image(image_view.image)
+        inclusive = not clear
         photo_consistent_score += voxels_is_visible_in_image(
             voxels.position,
             voxels.size,
@@ -357,25 +351,14 @@ def filter_voxels(voxels, image_views, error_tolerance=0, trim_outside=None, ret
             inclusive,
             image_view.integral
         )
-
         cond = photo_consistent_score >= i + 1 - error_tolerance
-        if return_inconsistent:
-            if inconsistent_position is None:
-                inconsistent_position = voxels.position[numpy.logical_not(cond)]
-            else:
-                inconsistent_position = numpy.insert(
-                    inconsistent_position, 0, voxels.position[numpy.logical_not(cond)], axis=0
-                )
         voxels = Voxels(voxels.position[cond], voxels.size)
         photo_consistent_score = photo_consistent_score[cond]
 
-    if return_inconsistent:
-        return voxels, Voxels(inconsistent_position, voxels.size)
-    else:
-        return voxels
+    return voxels
 
 
-def tolerant_reconstruction(image_views, voxels_size=4, error_tolerance=0, trim_outside=None, start=None):
+def tolerant_reconstruction(image_views, voxels_size=4, error_tolerance=0, clear_outside=None, start=None):
 
     if start is None:
         voxels = reconstruction_grid()
@@ -388,13 +371,13 @@ def tolerant_reconstruction(image_views, voxels_size=4, error_tolerance=0, trim_
         if len(voxels.position) == 0:
             break
         voxels = split_voxels_in_eight(voxels)
-        voxels = filter_voxels(voxels, image_views, error_tolerance=error_tolerance, trim_outside=trim_outside)
+        voxels = filter_voxels(voxels, image_views, error_tolerance=error_tolerance, clear_outside=clear_outside)
 
     return voxels
 
 
-def multi_tolerant_reconstruction(image_views, voxels_size=4, max_tolerance=0, trim_outside=None, start=None):
-    voxels = tolerant_reconstruction(image_views, voxels_size=voxels_size, error_tolerance=0, trim_outside=trim_outside,
+def multi_tolerant_reconstruction(image_views, voxels_size=4, max_tolerance=0, clear_outside=None, start=None):
+    voxels = tolerant_reconstruction(image_views, voxels_size=voxels_size, error_tolerance=0, clear_outside=clear_outside,
                                      start=start)
     not_reconstructed = []
     for iv in image_views:
@@ -414,8 +397,8 @@ def multi_tolerant_reconstruction(image_views, voxels_size=4, max_tolerance=0, t
             if len(new_voxels.position) == 0:
                 break
             new_voxels = split_voxels_in_eight(new_voxels)
-            new_voxels = filter_voxels(new_voxels, image_views, error_tolerance=i + 1, trim_outside=trim_outside)
-            new_voxels = filter_voxels(new_voxels, not_reconstructed, error_tolerance=0, trim_outside=trim_outside)
+            new_voxels = filter_voxels(new_voxels, image_views, error_tolerance=i + 1, clear_outside=clear_outside)
+            new_voxels = filter_voxels(new_voxels, not_reconstructed, error_tolerance=0, clear_outside=clear_outside)
 
         if len(new_voxels.position) == 0:
             break
@@ -439,9 +422,8 @@ def reconstruction_3d(
     voxels_size=4,
     error_tolerance=0,
     start=None,
-    boundaries=None,
-    dilated_views=None,
-    minimal_views=None):
+    clear_outside=True
+):
     """
     Construct a list of voxel represented object with positive value on binary
     image in images of images_projections.
@@ -482,18 +464,11 @@ def reconstruction_3d(
         raise ValueError("Images views is empty")
 
     if error_tolerance >= 0:
-        if dilated_views is None:
-            voxels = tolerant_reconstruction(image_views, voxels_size=voxels_size, error_tolerance=error_tolerance,
-                                           start=start)
-        else:
-            pass
-            #voxels = dilated_tolerant_reconstuction(image_views, voxels_size=voxels_size, error_tolerance=error_tolerance,
-            #                              start=start, dilated_views=dilated_views)
+        voxels = tolerant_reconstruction(image_views, voxels_size=voxels_size, error_tolerance=error_tolerance,
+                                           start=start, clear_outside=clear_outside)
     else:
-        if minimal_views is None:
-            minimal_views = 3
-        voxels = multi_tolerant_reconstruction(image_views, voxels_size=voxels_size, depth=abs(error_tolerance),
-                                           start=start, minimal_views=minimal_views)
+        voxels = multi_tolerant_reconstruction(image_views, voxels_size=voxels_size, max_tolerance=abs(error_tolerance),
+                                           start=start, clear_outside=clear_outside)
 
     return VoxelGrid(voxels.position, voxels.size)
 

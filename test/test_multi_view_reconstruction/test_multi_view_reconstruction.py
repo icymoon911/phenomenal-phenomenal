@@ -193,7 +193,7 @@ def get_image_views_cube_projected(with_ref=False):
             iv = phm_obj.OldImageView(img, projection, inclusive=False, image_ref=image_ref)
         else:
             iv = phm_obj.ImageView(img, projection)
-            
+
         image_views.append(iv)
 
     return image_views

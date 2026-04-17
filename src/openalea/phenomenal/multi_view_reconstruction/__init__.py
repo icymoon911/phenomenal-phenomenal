@@ -28,8 +28,8 @@ Main's function
 
 
 from .multi_view_reconstruction import *
-from ._multi_view_reconstruction_octree import *
-from ._multi_view_reconstruction_neighbours import *
+from ._multi_view_reconstruction_octree import reconstruction_3d_octree
+from ._multi_view_reconstruction_neighbours import reconstruction_3d_neighbours
 # ==============================================================================
 
 __all__ = [s for s in dir() if not s.startswith("_")]
