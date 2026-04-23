@@ -32,7 +32,7 @@ Data Structure
 from .imageView import ImageView
 from .image3D import Image3D
 from .voxelOctree import VoxelOctree
-from .voxelGrid import VoxelGrid
+from .voxelGrid import VoxelGrid, bind_grids
 from .voxelSegment import VoxelSegment
 from .voxelSkeleton import VoxelSkeleton
 from .voxelOrgan import VoxelOrgan
