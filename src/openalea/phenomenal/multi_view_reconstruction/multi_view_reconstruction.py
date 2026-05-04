@@ -43,6 +43,22 @@ def integral_image(input_array):
     return integral[1:, 1:]
 
 
+def find_best_angle(bin_side_images):
+    max_len = 0
+    max_angle = None
+
+    for angle in bin_side_images:
+        x_pos, y_pos, x_len, y_len = cv2.boundingRect(
+            cv2.findNonZero(bin_side_images[angle])
+        )
+
+        if x_len > max_len:
+            max_len = x_len
+            max_angle = angle
+
+    return max_angle
+
+
 def get_voxels_corners(voxels_position, voxels_size):
     """According to the voxels position and their size, return a numpy array
     containing for each input voxels the position of the 8 corners.
