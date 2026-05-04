@@ -51,6 +51,7 @@ from .scene import *
 from .show_basic import *
 from .show_skeleton import *
 from .show_segmentation import *
+from .reconstruction_metrics import *
 # ==============================================================================
 
 __all__ = [s for s in dir() if not s.startswith("_")]
