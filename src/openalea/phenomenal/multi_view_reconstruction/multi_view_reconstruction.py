@@ -192,11 +192,46 @@ def split_voxels_in_eight(voxels):
 
 
 # ==============================================================================
+def integral_image_hits(boxes, image_int, width, height):
+    """
+    boxes: (N, 4) array → [x_min, y_min, x_max, y_max] (float or int)
+    returns: boolean array (N,) → True if any pixel inside box > 0
+    """
+
+    if len(boxes) == 0:
+        return numpy.zeros(0, dtype=bool)
+
+    # Floor + convert once
+    boxes = numpy.floor(boxes).astype(numpy.int32)
+
+    # Clip to image bounds
+    boxes[:, 0] = numpy.clip(boxes[:, 0], 0, width - 1)
+    boxes[:, 2] = numpy.clip(boxes[:, 2], 0, width - 1)
+    boxes[:, 1] = numpy.clip(boxes[:, 1], 0, height - 1)
+    boxes[:, 3] = numpy.clip(boxes[:, 3], 0, height - 1)
+
+    # Integral image offset trick
+    boxes[:, 0:2] -= 1
+    boxes[boxes < 0] = 0
+
+    x0 = boxes[:, 0]
+    y0 = boxes[:, 1]
+    x1 = boxes[:, 2]
+    y1 = boxes[:, 3]
+
+    # Vectorized integral image query
+    sums = (
+        image_int[y1, x1]
+        + image_int[y0, x0]
+        - image_int[y0, x1]
+        - image_int[y1, x0]
+    )
+
+    return sums > 0
 
 
 def voxels_is_visible_in_image(
-    voxels_position, voxels_size, image, projection, inclusive, image_int=None
-):
+    voxels_position, voxels_size, image, projection, inclusive, image_int=None):
     """
     Return a numpy array containing True if the voxel are
         projected is photo-consistent on image else False
@@ -245,78 +280,61 @@ def voxels_is_visible_in_image(
         projected is photo-consistent on image else False
     """
 
-    height, length = image.shape
-    ori_result = numpy.zeros(
-        (
-            len(
-                voxels_position,
-            )
-        ),
-        dtype=int,
-    )
+    height, width = image.shape
+    N = len(voxels_position)
 
-    r = projection(voxels_position)
+    mask = numpy.zeros(N, dtype=bool)
 
-    cond = (r[:, 0] >= 0) & (r[:, 1] >= 0) & (r[:, 0] < length) & (r[:, 1] < height)
+    # ------------------------------------------------------------------
+    # 1.  Mark True if voxel center projection hits a non-zero pixel on image
+    pixel_coords = projection(voxels_position)
+    px = pixel_coords[:, 0]
+    py = pixel_coords[:, 1]
+    # In-bounds indices
+    idx = numpy.nonzero(
+        (px >= 0) & (py >= 0) & (px < width) & (py < height)
+    )[0]
+    if idx.size > 0:
+        pix = pixel_coords[idx].astype(numpy.int32)
+        mask[idx] |= image[pix[:, 1], pix[:, 0]] > 0
 
-    rr = r[cond].astype(int)
+    # ------------------------------------------------------------------
+    # 2. Filter and keep no-hits voxels
+    keep_idx = numpy.nonzero(~mask)[0]
+    if keep_idx.size == 0:
+        return mask
+    voxels_position_kept = voxels_position[keep_idx]
 
-    (ori_result[cond])[image[rr[:, 1], rr[:, 0]] > 0] = 1
-    not_cond = numpy.logical_not(ori_result > 0)
-
-    result = ori_result[not_cond]
-    voxels_position = voxels_position[not_cond]
-
-    # ==========================================================================
-
+    # ------------------------------------------------------------------
+    # 3. Project voxels and get projected Bounding boxes
     min_xy_max_xy = get_bounding_box_voxel_projected(
-        voxels_position, voxels_size, projection
+        voxels_position_kept, voxels_size, projection
     )
 
-    vv = (
-        (min_xy_max_xy[:, 2] < 0)
-        | (min_xy_max_xy[:, 0] >= length)
-        | (min_xy_max_xy[:, 3] < 0)
-        | (min_xy_max_xy[:, 1] >= height)
+    x_min = min_xy_max_xy[:, 0]
+    y_min = min_xy_max_xy[:, 1]
+    x_max = min_xy_max_xy[:, 2]
+    y_max = min_xy_max_xy[:, 3]
+
+    # Out-of-screen are directly mark as True if inclusive
+    outside = (
+        (x_max < 0) | (x_min >= width) |
+        (y_max < 0) | (y_min >= height)
     )
 
-    not_vv = numpy.logical_not(vv)
-    result[vv] = 1 if inclusive else 0
+    # Write directly into global mask
+    mask[keep_idx[outside]] = True if inclusive else False
 
-    min_xy_max_xy = min_xy_max_xy[not_vv]
-    bb = result[not_vv]
+    # --------------------------------------------------------------
+    # 4. Only process remaining
+    inside_idx = keep_idx[~outside]
 
-    min_xy_max_xy = numpy.floor(min_xy_max_xy).astype(int)
+    if inside_idx.size > 0:
+        boxes = min_xy_max_xy[~outside]
+        hits = integral_image_hits(boxes, image_int, width, height)
+        mask[inside_idx] |= hits
 
-    # X limit
-    (min_xy_max_xy[:, 0])[min_xy_max_xy[:, 0] >= length] = length - 1
-    (min_xy_max_xy[:, 2])[min_xy_max_xy[:, 2] >= length] = length - 1
-    # Y limit
-    (min_xy_max_xy[:, 1])[min_xy_max_xy[:, 1] >= height] = height - 1
-    (min_xy_max_xy[:, 3])[min_xy_max_xy[:, 3] >= height] = height - 1
-    # Under zero limit
-    min_xy_max_xy[:, 0:2] -= 1  # For integral image optimization
-    min_xy_max_xy[min_xy_max_xy < 0] = 0
-
-    # ==========================================================================
-
-    for i, (x_min, y_min, x_max, y_max) in enumerate(min_xy_max_xy):
-        if (
-            image_int[y_max, x_max]
-            + image_int[y_min, x_min]
-            - image_int[y_min, x_max]
-            - image_int[y_max, x_min]
-        ) > 0:
-            bb[i] = 1
-
-    # for i, (x_min, y_min, x_max, y_max) in enumerate(min_xy_max_xy):
-    #     if numpy.count_nonzero(image[y_min:y_max + 1, x_min:x_max + 1]) > 0:
-    #         bb[i] = 1
-
-    result[not_vv] = bb
-    ori_result[not_cond] = result
-
-    return ori_result
+    return mask
 
 
 # ==============================================================================
