@@ -5,7 +5,7 @@
 [![Last version](https://anaconda.org/openalea3/openalea.phenomenal/badges/version.svg)](https://anaconda.org/OpenAlea3/openalea.phenomenal/files)
 [![GitHub CI](https://github.com/openalea/phenomenal/actions/workflows/openalea_ci.yml/badge.svg)](https://github.com/openalea/phenomenal/actions/workflows/openalea_ci.yml)
 [![Documentation Status](https://readthedocs.org/projects/phenomenal/badge/?version=latest)](https://phenomenal.readthedocs.io/en/latest/?badge=latest)
-[![Launch interactive phenomenal notebook with myBinder service](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/openalea/phenomenal/master?filepath=examples)
+[![Launch interactive phenomenal notebook with myBinder service](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/openalea/phenomenal/master?filepath=doc/examples)
 
 
 # Phenomenal: An automatic open source library for 3D shoot architecture reconstruction and analysis for image-based plant phenotyping

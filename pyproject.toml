@@ -25,14 +25,6 @@ include-package-data = false # force explicit declaration of data (disable autom
   ]
   language = "c++"
 
-[[tool.setuptools.ext-modules]]
-  name="openalea.phenomenal.multi_view_reconstruction._c_mvr"
-  sources = [
-    "src/openalea/phenomenal/multi_view_reconstruction/src/c_mvr.pyx",
-    "src/openalea/phenomenal/multi_view_reconstruction/src/integral_image.cpp"
-  ]
-  language = "c++"
-
 
 [project]
 name = "openalea.phenomenal"
