@@ -159,7 +159,7 @@ def from_vtk_poly_data_to_vertices_faces(vtk_poly_data):
 
     colors = vtk_poly_data.GetPointData().GetScalars()
 
-    return vertices, faces[:, 1:], colors
+    return vertices, faces, colors
 
 
 def from_numpy_matrix_to_vtk_image_data(data_matrix):
