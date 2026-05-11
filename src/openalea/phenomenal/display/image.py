@@ -15,7 +15,7 @@ Module to display image and binarization result
 import math
 import numpy
 from PIL import Image
-from openalea.phenomenal.optional_deps import require_dependency
+from matplotlib import pyplot as plt
 # ==============================================================================
 
 __all__ = ["show_image", "show_images"]
@@ -24,7 +24,6 @@ __all__ = ["show_image", "show_images"]
 
 
 def show_image(image, name_windows=""):
-    plt = require_dependency('matplotlib.pyplot')
     plt.title(name_windows)
     plt.axis('off')
     plt.imshow(Image.fromarray(image).convert("RGB"))
@@ -32,7 +31,6 @@ def show_image(image, name_windows=""):
 
 
 def show_images(images, name_windows=""):
-    plt = require_dependency('matplotlib.pyplot')
     plt.title(name_windows)
     plt.axis('off')
     nb_col = min(len(images), 4)
