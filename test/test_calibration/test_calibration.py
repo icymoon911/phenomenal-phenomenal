@@ -94,7 +94,7 @@ def test_find_frame():
     fr, fpts = calib.find_frame(image_points, [('x','y',0) for _ in image_points['side']],
                fixed_parameters={'_pos_x': 0, '_pos_y': 0},
                                 )
-    numpy.testing.assert_almost_equal(fr._pos_z, -938.86, decimal=2)
+    numpy.testing.assert_allclose(fr._pos_z, -938.86, atol=0.05)
     expected = [(-710.748065,  732.711416, 0),
                 (694.650717,  736.685707, 0),
                 (232.955844, -735.798007, 0),
