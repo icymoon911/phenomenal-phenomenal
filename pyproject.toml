@@ -51,14 +51,13 @@ dynamic = ["version", "readme"]
 dependencies = [
   "numpy",
   "scipy",
-  "scikit-image",
   "scikit-learn",
   "networkx",
   "vtk",
   "orjson",
   "skan",
-  "ipyvolume",
   "k3d",
+  "Pillow",
 ]
 
 [project.optional-dependencies]
@@ -72,9 +71,6 @@ doc = [
   "sphinx-copybutton",
   "ipython_genutils",
   "nbsphinx",
-]
-viz = [
-  "matplotlib",
 ]
 notebook = [
   "notebook",
@@ -92,6 +88,7 @@ channels = [
 # deps not available in pip with conda name
 dependencies = [
   "opencv",
+  "matplotlib-base",
   "openalea.phenotyping_data"  # for notebooks data
 ]
 
