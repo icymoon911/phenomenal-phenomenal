@@ -18,8 +18,8 @@ import openalea.phenomenal.object as phm_obj
 import openalea.phenomenal.multi_view_reconstruction as phm_mvr
 
 from pathlib import Path
-test_subdir = Path(__file__).parent if '__file__' in globals() else Path(".").resolve()
-data_dir = test_subdir.parent / "data" / "plant_1"
+test_subdir = Path(__file__).parent.parent if '__file__' in globals() else Path(".").resolve()
+data_dir = test_subdir / "data" / "plant_1"
 
 # ==============================================================================
 
@@ -158,7 +158,7 @@ def test_split_and_projection():
 # ==============================================================================
 
 
-def get_image_views_cube_projected(with_ref=False):
+def get_image_views_cube_projected():
     # ==========================================================================
     # Create object
     voxels_size = 10
@@ -174,59 +174,48 @@ def get_image_views_cube_projected(with_ref=False):
     calibrations = phm_data.calibrations(data_dir)
 
     shape_image = (2454, 2056)
-    image_views = list()
+    image_views = dict()
     for angle in range(0, 360, 30):
         projection = calibrations["side"].get_projection(angle)
 
         img = phm_mvr.project_voxel_centers_on_image(
             voxels_position, voxels_size, shape_image, projection
         )
-
-        image_ref = None
-        if with_ref:
-            if angle == 0:
-                img[:] = 0
-            if angle == 90:
-                image_ref = img
-
-        iv = phm_obj.ImageView(img, projection, inclusive=False, image_ref=image_ref)
-        image_views.append(iv)
+        iv = phm_obj.ImageView(img, projection)
+        image_views[f'side_{angle}'] = iv
 
     return image_views
 
 
-def test_reconstruction_3d_1():
+def test_reconstruction_3d_plant1():
     # Load images binarize
     bin_images = phm_data.bin_images(data_dir)
     calibrations = phm_data.calibrations(data_dir)
 
-    image_views = list()
+    image_views = dict()
     for id_camera in bin_images:
         for angle in bin_images[id_camera]:
             projection = calibrations[id_camera].get_projection(angle)
             iv = phm_obj.ImageView(
                 bin_images[id_camera][angle],
-                projection,
-                inclusive=False,
-                image_ref=None,
+                projection
             )
-            image_views.append(iv)
+            name = f'{id_camera}_{angle}'
+            image_views[name] = iv
 
-    voxels_size = 64
-    error_tolerance = 0
     vg = phm_mvr.reconstruction_3d(
-        image_views, voxels_size=voxels_size, error_tolerance=error_tolerance
-    )
-
+        image_views, voxels_size=64, error_tolerance=0)
+    assert len(vg.voxels_position) > 0
+    vg = phm_mvr.reconstruction_3d(
+        image_views, voxels_size=64, error_tolerance=-1)
     assert len(vg.voxels_position) > 0
 
 
-def test_reconstruction_3d_2():
-    with_ref = False
+def test_reconstruction_3d_cube():
     voxels_size = 20
     error_tolerance = 0
 
-    image_views = get_image_views_cube_projected(with_ref=with_ref)
+    image_views = get_image_views_cube_projected()
 
     vg = phm_mvr.reconstruction_3d(
         image_views, voxels_size=voxels_size, error_tolerance=error_tolerance
@@ -236,14 +225,14 @@ def test_reconstruction_3d_2():
     false_positive, true_negative = phm_mvr.reconstruction_error(vg, image_views)
 
 
-def test_reconstruction_3d_3():
-    with_ref = True
+def test_reconstruction_3d_neighbours():
     voxels_size = 40
     error_tolerance = 0
 
-    image_views = get_image_views_cube_projected(with_ref=with_ref)
-    vg = phm_mvr.reconstruction_3d(
-        image_views, voxels_size=voxels_size, error_tolerance=error_tolerance
+    image_views = get_image_views_cube_projected()
+    image_views['side_0'].image[:] = 0
+    vg = phm_mvr.reconstruction_3d_neighbours(
+        image_views, voxels_size=voxels_size, error_tolerance=error_tolerance, reference_views=['side_90']
     )
 
     assert len(vg.voxels_position) > 0

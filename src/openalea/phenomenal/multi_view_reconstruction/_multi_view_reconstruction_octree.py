@@ -13,7 +13,7 @@ import collections
 import math
 import numpy
 
-from .multi_view_reconstruction import get_bounding_box_voxel_projected
+from .multi_view_reconstruction import check_each, get_bounding_box_voxel_projected
 from ..object import VoxelOctree
 # ==============================================================================
 # Function for no kep
@@ -198,6 +198,7 @@ def reconstruction_3d_octree(
     error_tolerance=0,
     voxel_center_origin=(0.0, 0.0, 0.0),
     world_size=4096,
+    clear_outside=True,
     verbose=False,
 ):
     """
@@ -206,11 +207,9 @@ def reconstruction_3d_octree(
 
     Parameters
     ----------
-    images_projections : [(image, projection), ...]
-        List of tuple (image, projection) where image is a binary image
-        (numpy.ndarray) and function projection (function (x, y, z) -> (x, y))
-        who take (x, y, z) position on return (x, y) position according space
-        representation of this image
+    image_views : {name: ImageView, ...}
+        Dict of phenomenal.object.ImageView objects gathering image, projection, where image is a binary image
+        (numpy.ndarray) and projection a function projecting (x, y, z) ->  (u, v) coordinate on image
 
     voxels_size : float, optional
         Size of side geometry of voxel that each voxel will have
@@ -228,6 +227,11 @@ def reconstruction_3d_octree(
         List of first original voxel who will be split. If None, a list is
         create with the voxel_center_origin value.
 
+    clear_outside: bool | str | [str,...], optional
+        Should voxels projected outside image_views be kept ? True (default) or False set a unique rule for all views.
+        if a list of name is provided, only image_views whose key starts with names are used to clear voxels
+
+
     verbose : bool, optional
         If True, print for each iteration of split, number of voxel before and
         after projection on images
@@ -241,6 +245,10 @@ def reconstruction_3d_octree(
 
     if len(image_views) == 0:
         raise ValueError("Len images view have not length")
+
+    clear_view = check_each(image_views, clear_outside)
+    for k, image_view in image_views.items():
+        image_view.inclusive = not clear_view[k]
 
     voxel_octree = VoxelOctree.from_position(voxel_center_origin, world_size, True)
 
@@ -262,7 +270,7 @@ def reconstruction_3d_octree(
             print("Iteration", i + 1, "/", nb_iteration, end="")
             print(" : ", len(leaf_nodes), end="")
 
-        leaf_nodes = _keep_visible(leaf_nodes, image_views, error_tolerance)
+        leaf_nodes = _keep_visible(leaf_nodes, image_views.values(), error_tolerance)
 
         # Gain time is not enough for keeping that
         # if i + 1 < nb_iteration:

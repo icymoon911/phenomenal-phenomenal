@@ -8,30 +8,55 @@
 #
 # ==============================================================================
 
-
-import math
 import collections
 import cv2
 import scipy.spatial
 import numpy
-import sklearn.neighbors
 
-from ..object import VoxelGrid
+from ..object import VoxelGrid, ImageView
 
 # ==============================================================================
 # Class
 
 Voxels = collections.namedtuple("Voxels", ["position", "size"])
-VoxelsStage = collections.namedtuple("VoxelsStage", ["consistent", "inconsistent"])
-
 
 # ==============================================================================
+# deprecated numpy-python slow integral (kept as explicit 'doc' of what integral image is for us)
+
+
+def get_integrale_image(img):
+    a = numpy.zeros_like(img, dtype=int)
+    a[img > 0] = 1
+    for y, x in numpy.ndindex(a.shape):
+        if x - 1 >= 0:
+            a[y, x] += a[y, x - 1]
+        if y - 1 >= 0:
+            a[y, x] += a[y - 1, x]
+        if x - 1 >= 0 and y - 1 >= 0:
+            a[y, x] -= a[y - 1, x - 1]
+    return a
+
 
 def integral_image(input_array):
     binary = (input_array > 0).astype(numpy.uint8)
     integral = cv2.integral(binary, sdepth=cv2.CV_32S)
     return integral[1:, 1:]
 
+
+def find_best_angle(bin_side_images):
+    max_len = 0
+    max_angle = None
+
+    for angle in bin_side_images:
+        x_pos, y_pos, x_len, y_len = cv2.boundingRect(
+            cv2.findNonZero(bin_side_images[angle])
+        )
+
+        if x_len > max_len:
+            max_len = x_len
+            max_angle = angle
+
+    return max_angle
 
 
 def get_voxels_corners(voxels_position, voxels_size):
@@ -161,16 +186,52 @@ def split_voxels_in_eight(voxels):
     a8 = numpy.column_stack((x_plus, y_plus, z_plus))
 
     return Voxels(
-        numpy.concatenate((a1, a2, a3, a4, a5, a6, a7, a8), axis=0), voxels.size / 2.0
+        numpy.concatenate((a1, a2, a3, a4, a5, a6, a7, a8), axis=0),
+        voxels.size / 2.0
     )
 
 
 # ==============================================================================
+def integral_image_hits(boxes, image_int, width, height):
+    """
+    boxes: (N, 4) array → [x_min, y_min, x_max, y_max] (float or int)
+    returns: boolean array (N,) → True if any pixel inside box > 0
+    """
+
+    if len(boxes) == 0:
+        return numpy.zeros(0, dtype=bool)
+
+    # Floor + convert once
+    boxes = numpy.floor(boxes).astype(numpy.int32)
+
+    # Clip to image bounds
+    boxes[:, 0] = numpy.clip(boxes[:, 0], 0, width - 1)
+    boxes[:, 2] = numpy.clip(boxes[:, 2], 0, width - 1)
+    boxes[:, 1] = numpy.clip(boxes[:, 1], 0, height - 1)
+    boxes[:, 3] = numpy.clip(boxes[:, 3], 0, height - 1)
+
+    # Integral image offset trick
+    boxes[:, 0:2] -= 1
+    boxes[boxes < 0] = 0
+
+    x0 = boxes[:, 0]
+    y0 = boxes[:, 1]
+    x1 = boxes[:, 2]
+    y1 = boxes[:, 3]
+
+    # Vectorized integral image query
+    sums = (
+        image_int[y1, x1]
+        + image_int[y0, x0]
+        - image_int[y0, x1]
+        - image_int[y1, x0]
+    )
+
+    return sums > 0
 
 
 def voxels_is_visible_in_image(
-    voxels_position, voxels_size, image, projection, inclusive, image_int=None
-):
+    voxels_position, voxels_size, image, projection, inclusive, image_int=None):
     """
     Return a numpy array containing True if the voxel are
         projected is photo-consistent on image else False
@@ -219,310 +280,193 @@ def voxels_is_visible_in_image(
         projected is photo-consistent on image else False
     """
 
-    height, length = image.shape
-    ori_result = numpy.zeros(
-        (
-            len(
-                voxels_position,
-            )
-        ),
-        dtype=int,
-    )
+    height, width = image.shape
+    N = len(voxels_position)
 
-    r = projection(voxels_position)
+    mask = numpy.zeros(N, dtype=bool)
 
-    cond = (r[:, 0] >= 0) & (r[:, 1] >= 0) & (r[:, 0] < length) & (r[:, 1] < height)
+    # ------------------------------------------------------------------
+    # 1.  Mark True if voxel center projection hits a non-zero pixel on image
+    pixel_coords = projection(voxels_position)
+    px = pixel_coords[:, 0]
+    py = pixel_coords[:, 1]
+    # In-bounds indices
+    idx = numpy.nonzero(
+        (px >= 0) & (py >= 0) & (px < width) & (py < height)
+    )[0]
+    if idx.size > 0:
+        pix = pixel_coords[idx].astype(numpy.int32)
+        mask[idx] |= image[pix[:, 1], pix[:, 0]] > 0
 
-    rr = r[cond].astype(int)
+    # ------------------------------------------------------------------
+    # 2. Filter and keep no-hits voxels
+    keep_idx = numpy.nonzero(~mask)[0]
+    if keep_idx.size == 0:
+        return mask
+    voxels_position_kept = voxels_position[keep_idx]
 
-    (ori_result[cond])[image[rr[:, 1], rr[:, 0]] > 0] = 1
-    not_cond = numpy.logical_not(ori_result > 0)
-
-    result = ori_result[not_cond]
-    voxels_position = voxels_position[not_cond]
-
-    # ==========================================================================
-
+    # ------------------------------------------------------------------
+    # 3. Project voxels and get projected Bounding boxes
     min_xy_max_xy = get_bounding_box_voxel_projected(
-        voxels_position, voxels_size, projection
+        voxels_position_kept, voxels_size, projection
     )
 
-    vv = (
-        (min_xy_max_xy[:, 2] < 0)
-        | (min_xy_max_xy[:, 0] >= length)
-        | (min_xy_max_xy[:, 3] < 0)
-        | (min_xy_max_xy[:, 1] >= height)
+    x_min = min_xy_max_xy[:, 0]
+    y_min = min_xy_max_xy[:, 1]
+    x_max = min_xy_max_xy[:, 2]
+    y_max = min_xy_max_xy[:, 3]
+
+    # Out-of-screen are directly mark as True if inclusive
+    outside = (
+        (x_max < 0) | (x_min >= width) |
+        (y_max < 0) | (y_min >= height)
     )
 
-    not_vv = numpy.logical_not(vv)
-    result[vv] = 1 if inclusive else 0
+    # Write directly into global mask
+    mask[keep_idx[outside]] = True if inclusive else False
 
-    min_xy_max_xy = min_xy_max_xy[not_vv]
-    bb = result[not_vv]
+    # --------------------------------------------------------------
+    # 4. Only process remaining
+    inside_idx = keep_idx[~outside]
 
-    min_xy_max_xy = numpy.floor(min_xy_max_xy).astype(int)
+    if inside_idx.size > 0:
+        boxes = min_xy_max_xy[~outside]
+        hits = integral_image_hits(boxes, image_int, width, height)
+        mask[inside_idx] |= hits
 
-    # X limit
-    (min_xy_max_xy[:, 0])[min_xy_max_xy[:, 0] >= length] = length - 1
-    (min_xy_max_xy[:, 2])[min_xy_max_xy[:, 2] >= length] = length - 1
-    # Y limit
-    (min_xy_max_xy[:, 1])[min_xy_max_xy[:, 1] >= height] = height - 1
-    (min_xy_max_xy[:, 3])[min_xy_max_xy[:, 3] >= height] = height - 1
-    # Under zero limit
-    min_xy_max_xy[:, 0:2] -= 1  # For integral image optimization
-    min_xy_max_xy[min_xy_max_xy < 0] = 0
-
-    # ==========================================================================
-
-    for i, (x_min, y_min, x_max, y_max) in enumerate(min_xy_max_xy):
-        if (
-            image_int[y_max, x_max]
-            + image_int[y_min, x_min]
-            - image_int[y_min, x_max]
-            - image_int[y_max, x_min]
-        ) > 0:
-            bb[i] = 1
-
-    # for i, (x_min, y_min, x_max, y_max) in enumerate(min_xy_max_xy):
-    #     if numpy.count_nonzero(image[y_min:y_max + 1, x_min:x_max + 1]) > 0:
-    #         bb[i] = 1
-
-    result[not_vv] = bb
-    ori_result[not_cond] = result
-
-    return ori_result
+    return mask
 
 
 # ==============================================================================
-
-
-def kept_visible_voxel(
-    voxels_position, voxels_size, image_views, error_tolerance=0, int_images=None
-):
+def reconstruction_grid(center=(0.0, 0.0, 0.0), grid_size=4096, voxel_size=512):
     """
-    Kept in a new collections.deque the voxel who is visible on each image of
-    images_projections according the error_tolerance
+    Setup a reconstruction grid
+    Args:
+        center: coordinates of the center of the grid
+        grid_size: outer edge length of the grid
+        voxel_size: edge length of voxels composing the grid
 
-    Parameters
-    ----------
-    voxels_position : numpy.array([[x, y, z], ...]
-        Center position of the voxels
-
-    voxels_size : float
-        Diameter size of the voxels
-
-    image_views : [(image, projection), ...]
-        List of tuple (image, projection) where image is a binary image
-        (numpy.ndarray) and function projection (function (x, y, z) -> (x, y))
-        who take (x, y, z) position on return (x, y) position according space
-        representation of this image
-
-    error_tolerance : int, optional
-        Number of image will be ignored if the projected voxel is not visible.
-
-    int_images: Integral image of the binary image (optimization)
-
-    Returns
-    -------
-    out : VoxelsStage
+    Returns:
+        a Voxels (positions, size) named tuple
     """
+    voxels_position = numpy.array([center])
+    voxels = Voxels(voxels_position, grid_size)
+    while voxels.size != voxel_size:
+        voxels = split_voxels_in_eight(voxels)
+    return voxels
 
-    photo_consistent = numpy.zeros((len(voxels_position),), dtype=int)
-    no_kept = None
 
-    for i, image_view in enumerate(image_views):
-        photo_consistent += voxels_is_visible_in_image(
-            voxels_position,
-            voxels_size,
+def check_each(image_views, check=True):
+    """Return a check dict for all keys in image_views according to check
+
+    Args:
+        image_views : {name: ImageView, ...}
+         Dict of phenomenal.object.ImageView objects gathering image, projection, where image is a binary image
+         (numpy.ndarray) and projection a function projecting (x, y, z) ->  (u, v) coordinate on image
+        check: bool | str | [str,...]
+         If True or False, the value associated to each key present in image_views. If a list of name,
+         the names to be set to True
+    """
+    if isinstance(check, bool):
+        return {k: check for k in image_views}
+
+    check = [check] if isinstance(check, str) else check
+
+    return {
+        name: any(name.startswith(cam) for cam in check)
+        for name in image_views
+    }
+
+
+def filter_voxels(voxels, image_views, error_tolerance=0, clear_outside=True):
+    """Filter voxels, keeping the one photo_consistent with all minus error_tolerance images in image_views"""
+
+    clear_view = check_each(image_views, clear_outside)
+    photo_consistent_score = numpy.zeros((len(voxels.position),), dtype=int)
+    for i, (k, image_view) in enumerate(image_views.items()):
+        if image_view.integral is None:
+            image_view.integral = integral_image(image_view.image)
+        inclusive = not clear_view[k]
+        photo_consistent_score += voxels_is_visible_in_image(
+            voxels.position,
+            voxels.size,
             image_view.image,
             image_view.projection,
-            image_view.inclusive,
-            image_int=int_images[i],
+            inclusive,
+            image_view.integral
         )
+        cond = photo_consistent_score >= i + 1 - error_tolerance
+        voxels = Voxels(voxels.position[cond], voxels.size)
+        photo_consistent_score = photo_consistent_score[cond]
 
-        cond = photo_consistent >= i + 1 - error_tolerance
-
-        if no_kept is None:
-            no_kept = voxels_position[numpy.logical_not(cond)]
-        else:
-            no_kept = numpy.insert(
-                no_kept, 0, voxels_position[numpy.logical_not(cond)], axis=0
-            )
-
-        voxels_position = voxels_position[cond]
-        photo_consistent = photo_consistent[cond]
-
-    consistent = Voxels(voxels_position, voxels_size)
-    inconsistent = Voxels(no_kept, voxels_size)
-
-    return VoxelsStage(consistent, inconsistent)
+    return voxels
 
 
-# ==============================================================================
+def tolerant_reconstruction(image_views, voxels_size=4, error_tolerance=0, clear_outside=None, start=None):
+
+    if start is None:
+        voxels = reconstruction_grid()
+    elif isinstance(start, VoxelGrid):
+        voxels = Voxels(start.voxels_position, start.voxels_size)
+    else:
+        voxels = start
+
+    while voxels.size > voxels_size:
+        if len(voxels.position) == 0:
+            break
+        voxels = split_voxels_in_eight(voxels)
+        voxels = filter_voxels(voxels, image_views, error_tolerance=error_tolerance, clear_outside=clear_outside)
+
+    return voxels
 
 
-def have_image_ref(image_views):
-    """
-    Returns whether an array of ImageView has a reference image or not.
+def multi_tolerant_reconstruction(image_views, voxels_size=4, max_tolerance=0, clear_outside=None, start=None):
+    voxels = tolerant_reconstruction(image_views, voxels_size=voxels_size, error_tolerance=0, clear_outside=clear_outside,
+                                     start=start)
+    not_reconstructed = {}
+    for k, iv in image_views.items():
+        projected = project_voxel_centers_on_image(
+            voxels.position,
+            voxels.size,
+            iv.image.shape,
+            iv.projection,
+        )
+        view = ImageView(numpy.logical_not(projected)*255,
+                            iv.projection)
+        not_reconstructed[k] = view
 
-    Parameters
-    ----------
-    image_views: array[ImageView]
-        The array of ImageView to test
+    for i in range(max_tolerance):
+        new_voxels = reconstruction_grid()
+        while new_voxels.size > voxels_size:
+            if len(new_voxels.position) == 0:
+                break
+            new_voxels = split_voxels_in_eight(new_voxels)
+            new_voxels = filter_voxels(new_voxels, image_views, error_tolerance=i + 1, clear_outside=clear_outside)
+            new_voxels = filter_voxels(new_voxels, not_reconstructed, error_tolerance=0, clear_outside=clear_outside)
 
-    Returns
-    -------
-    True if the array has a reference image else False.
-    """
-    for iv in image_views:
-        if iv.image_ref is not None:
-            return True
-    return False
+        if len(new_voxels.position) == 0:
+            break
 
-
-def create_groups(image_views, inconsistent):
-    groups = collections.defaultdict(list)
-    kept_groups = collections.defaultdict(list)
-
-    group_id = 0
-    for iv in image_views:
-        if iv.image_ref is not None:
-            height, length = iv.image.shape
-
-            min_xy_max_xy = get_bounding_box_voxel_projected(
-                inconsistent.position, inconsistent.size, iv.projection
-            )
-
-            # add each voxel to a visual cones
-            for i, (x_min, y_min, x_max, y_max) in enumerate(min_xy_max_xy):
-                if x_max < 0 or x_min >= length or y_max < 0 or y_min >= height:
-                    continue
-
-                x_min = int(min(max(math.floor(x_min), 0), length - 1))
-                y_min = int(min(max(math.floor(y_min), 0), height - 1))
-                x_max = int(min(max(math.floor(x_max), 0), length - 1))
-                y_max = int(min(max(math.floor(y_max), 0), height - 1))
-
-                img = iv.image_ref[y_min : y_max + 1, x_min : x_max + 1]
-                yy, xx = numpy.where(img > 0)
-                yy += y_min
-                xx += x_min
-                for y, x in zip(yy, xx):
-                    groups[(group_id, y, x)].append(i)
-
-            for y, x in zip(iv.yy, iv.xx):
-                if len(groups[(group_id, y, x)]) > 0:
-                    kept_groups[(group_id, y, x)] = groups[(group_id, y, x)]
-
-        group_id += 1
-
-    return kept_groups
-
-
-def check_groups(neigh, inconsistent, groups, nb_distance):
-    if len(groups.values()) == 0:
-        return None
-
-    positions = []
-    for index in groups.values():
-        index = numpy.array(index)
-
-        distance, _ = neigh.kneighbors(inconsistent.position[index])
-        distance = distance.min(axis=1)
-        xx = distance.argsort()[:nb_distance]
-        positions.append(inconsistent.position[index[xx]])
-
-    position = numpy.unique(numpy.concatenate(positions, axis=0), axis=0)
-
-    return Voxels(position, inconsistent.size)
-
-
-def reconstruction_inconsistent(image_views, stages, attractor=None):
-    for iv in image_views:
-        if iv.image_ref is not None:
-            im = project_voxel_centers_on_image(
-                stages[-1].consistent.position,
-                stages[-1].consistent.size,
+        for k, iv in image_views.items():
+            projected = project_voxel_centers_on_image(
+                new_voxels.position,
+                new_voxels.size,
                 iv.image.shape,
                 iv.projection,
             )
-            iv.il = iv.image_ref - im
-            iv.yy, iv.xx = numpy.where(iv.il > 0)
+            not_reconstructed[k].image *= numpy.logical_not(projected)
 
-    consistent_neighbors = sklearn.neighbors.NearestNeighbors(
-        n_neighbors=1, metric="euclidean"
-    )
+        voxels = Voxels(numpy.concatenate((voxels.position, new_voxels.position), axis=0), voxels.size)
 
-    if numpy.size(stages[-1].consistent.position) == 0:
-        consistent_neighbors.fit(numpy.array([[0, 0, 0]]))
-    else:
-        if attractor is not None:
-            consistent_neighbors.fit(attractor)
-        else:
-            consistent_neighbors.fit(stages[-1].consistent.position)
-
-    consistents = [None] * len(stages)
-    for i, stage in enumerate(stages):
-        if stage.inconsistent is None:
-            continue
-
-        inconsistent = stage.inconsistent
-        if consistents[i - 1] is not None:
-            voxels = split_voxels_in_eight(consistents[i - 1])
-            position = numpy.concatenate(
-                (inconsistent.position, voxels.position), axis=0
-            )
-            position = numpy.unique(position, axis=0)
-            inconsistent = Voxels(position, inconsistent.size)
-
-        groups = create_groups(image_views, inconsistent)
-        nb_distance = max(20 - int((20 / len(stages)) * i), 2)
-        consistents[i] = check_groups(
-            consistent_neighbors, inconsistent, groups, nb_distance
-        )
-
-    consistent_stages = [None] * len(stages)
-    for i, (stage, consistent) in enumerate(zip(stages, consistents)):
-        consistent_stages[i] = stage.consistent
-        if consistent is not None:
-            voxels_position = numpy.concatenate(
-                (consistent_stages[i].position, consistent.position), axis=0
-            )
-
-            voxels_position = numpy.unique(voxels_position, axis=0)
-
-            consistent_stages[i] = Voxels(voxels_position, consistent.size)
-
-    return consistent_stages
-
-
-# ==============================================================================
-
-
-def get_integrale_image(img):
-    a = numpy.zeros_like(img, dtype=int)
-    a[img > 0] = 1
-    for y, x in numpy.ndindex(a.shape):
-        if x - 1 >= 0:
-            a[y, x] += a[y, x - 1]
-        if y - 1 >= 0:
-            a[y, x] += a[y - 1, x]
-        if x - 1 >= 0 and y - 1 >= 0:
-            a[y, x] -= a[y - 1, x - 1]
-    return a
-
-
-# ==============================================================================
+    return voxels
 
 
 def reconstruction_3d(
     image_views,
     voxels_size=4,
     error_tolerance=0,
-    voxel_center_origin=(0.0, 0.0, 0.0),
-    start_voxel_size=4096,
-    voxels_position=None,
-    attractor=None,
+    start=None,
+    clear_outside=True
 ):
     """
     Construct a list of voxel represented object with positive value on binary
@@ -531,26 +475,29 @@ def reconstruction_3d(
     Parameters
     ----------
 
-    image_views : [(image, projection), ...]
-        List of tuple (image, projection) where image is a binary image
-        (numpy.ndarray) and function projection (function (x, y, z) -> (x, y))
-        who take (x, y, z) position on return (x, y) position according space
-        representation of this image
+    image_views : {name: ImageView, ...}
+        Dict of phenomenal.object.ImageView objects gathering image, projection, where image is a binary image
+        (numpy.ndarray) and projection a function projecting (x, y, z) ->  (u, v) coordinate on image
 
     voxels_size : float, optional
-        Diameter size of the voxels
+        Edge length of reconstructed voxels
 
     error_tolerance : int, optional
+        Control the degree of consistency of the reconstructed object with its projected views
+        If not provided the reconstruction is fully consistent with all views (error_tolerance=0)
+        If positive, the number of inconsistent views tolerated per voxel
+        If negative, a composite 3d reconstruction is computed, iteratively aggregating reconstructions of different
+        tolerance, from zero to abs(error_tolerance), discarding at each step voxels projecting on projections of
+        already reconstructed
 
-    voxel_center_origin : (x, y, z), optional
-        Center position of the first original voxel, who will be split.
+    start : VoxelGrid | [Voxel,..], optional
+        A voxel grid to be used as starting point.
+        If None (default), a grid returned by defaults of openalea.phenomenal.multiview_reconstruction.reconstruction_grid
 
-    start_voxel_size: int, optional
-        Minimum size that the origin voxel size must include at beginning
+    clear_outside: bool | str | [str,...], optional
+        Should voxels projected outside image_views be kept ? True (default) or False set a unique rule for all views.
+        if a list of name is provided, only image_views whose key starts with names are used to clear voxels
 
-    voxels_position : numpy.ndarray, optional
-        List of first original voxel who will be split. If None, a list is
-        created with the voxel_center_origin value.
 
     Returns
     -------
@@ -558,57 +505,16 @@ def reconstruction_3d(
     """
 
     if len(image_views) == 0:
-        raise ValueError("Len images view have not length")
+        raise ValueError("Images views is empty")
 
-    if voxels_position is None:
-        voxels_position = numpy.array([voxel_center_origin])
+    if error_tolerance >= 0:
+        voxels = tolerant_reconstruction(image_views, voxels_size=voxels_size, error_tolerance=error_tolerance,
+                                           start=start, clear_outside=clear_outside)
+    else:
+        voxels = multi_tolerant_reconstruction(image_views, voxels_size=voxels_size, max_tolerance=abs(error_tolerance),
+                                           start=start, clear_outside=clear_outside)
 
-    list_voxels_size = [
-        voxels_size * 2**i
-        for i in range(20, -1, -1)
-        if voxels_size * 2 ** (i - 1) < start_voxel_size
-    ]
-
-    # Pre-processing (optimization): Compute integral image for speed
-    # computation
-
-    int_images = []
-    for i, image_view in enumerate(image_views):
-        a = integral_image(image_view.image)
-        int_images.append(a)
-
-    stage = VoxelsStage(Voxels(voxels_position, list_voxels_size[0]), None)
-    stages = [stage]
-
-    while stage.consistent.size != voxels_size:
-        if len(stage.consistent.position) == 0:
-            break
-
-        voxels = split_voxels_in_eight(stage.consistent)
-
-        # print(voxels.size)
-
-        if voxels.size < 512:
-            stage = kept_visible_voxel(
-                voxels.position,
-                voxels.size,
-                image_views,
-                error_tolerance=error_tolerance,
-                int_images=int_images,
-            )
-        else:
-            stage = VoxelsStage(voxels, None)
-
-        stages.append(stage)
-
-    consistent_stages = [stage.consistent for stage in stages]
-    if have_image_ref(image_views):
-        consistent_stages = reconstruction_inconsistent(
-            image_views, stages, attractor=attractor
-        )
-
-    return VoxelGrid(consistent_stages[-1].position, consistent_stages[-1].size)
-
+    return VoxelGrid(voxels.position, voxels.size)
 
 # ==============================================================================
 
@@ -769,7 +675,7 @@ def reconstruction_error(voxels_grid, image_views):
 
     sum_false_positive = 0
     sum_false_negative = 0
-    for image_view in image_views:
+    for image_view in image_views.values():
         img_src = project_voxel_centers_on_image(
             voxels_grid.voxels_position,
             voxels_grid.voxels_size,
@@ -786,3 +692,6 @@ def reconstruction_error(voxels_grid, image_views):
     mean_false_negative = sum_false_negative / len(image_views)
 
     return mean_false_positive, mean_false_negative
+
+
+

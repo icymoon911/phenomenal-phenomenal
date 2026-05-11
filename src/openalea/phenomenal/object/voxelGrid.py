@@ -279,3 +279,12 @@ class VoxelGrid:
             if read_header:
                 return VoxelGrid(voxels_position, voxels_size), header
             return VoxelGrid(voxels_position, voxels_size)
+
+
+def bind_grids(voxel_grids, dx=50, dy=0, dz=0):
+    trans = numpy.array([dx, dy, dz])
+    size = voxel_grids[0].voxels_size
+    assert numpy.allclose([vx.voxels_size for vx in voxel_grids], size)
+    translated_pos = [g.voxels_position + i * trans for i, g in enumerate(voxel_grids)]
+    return VoxelGrid(numpy.vstack(translated_pos), size)
+

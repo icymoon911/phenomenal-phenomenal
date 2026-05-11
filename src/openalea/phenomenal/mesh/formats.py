@@ -81,17 +81,16 @@ def read_ply_to_vertices_faces(filename):
         vtk_poly_data.GetPoints().GetData()
     )
 
-    faces = vtkmodules.util.numpy_support.vtk_to_numpy(
-        vtk_poly_data.GetPolys().GetData()
-    )
-
-    faces = faces.reshape((len(faces) // 4, 4))
+    cell_array = vtk_poly_data.GetPolys()
+    connectivity = vtkmodules.util.numpy_support.vtk_to_numpy(cell_array.GetConnectivityArray())
+    # Reconstruct faces (assuming triangles like your original reshape)
+    faces = connectivity.reshape(-1, 3)
 
     colors = vtk_poly_data.GetPointData().GetScalars()
     if colors is not None:
         colors = vtkmodules.util.numpy_support.vtk_to_numpy(colors)
 
-    return vertices, faces[:, 1:], colors
+    return vertices, faces, colors
 
 
 def write_vtk_poly_data_to_ply_file(filename, vtk_poly_data) -> None:
