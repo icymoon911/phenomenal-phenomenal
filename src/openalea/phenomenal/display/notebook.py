@@ -11,22 +11,24 @@
 
 import k3d
 import numpy as np
-
+from matplotlib.colors import rgb2hex
 from ._order_color_map import order_color_map
 
 
 # ==============================================================================
 
-from matplotlib.colors import rgb2hex
 
 def plot_voxel(voxels, color=0x00ff00):
-    plt_voxels = k3d.voxels(voxels.astype(np.uint8), color_map=color)
+    # contiguous array and uint8 are required to avoid k3d implicit cast warning
+    plt_voxels = k3d.voxels(np.ascontiguousarray(voxels, dtype=np.uint8), color_map=color)
     return plt_voxels
+
 
 def plot_points(voxels_position, color=0x00ff00, size=2.0):
     plt_points = k3d.points(positions=voxels_position.astype(np.float32),
                             point_size=size, color=color)
     return plt_points
+
 
 def show_point_cloud(xyz_positions,
                      color=0x00ff00,
@@ -36,6 +38,7 @@ def show_point_cloud(xyz_positions,
     plot += k3d.points(positions=xyz_positions.astype(np.float32),
                     point_size=size, color=color)
     plot.display()
+
 
 def show_voxel_grid(voxel_grid,
                     color=0x00ff00):
@@ -59,6 +62,7 @@ def show_mesh(vertices, faces, color=0x00ff00):
     plot = k3d.plot()
     plot += mesh
     return plot
+
 
 def show_skeleton(
     voxel_skeleton,
