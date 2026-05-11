@@ -11,7 +11,7 @@
 
 import os
 import gzip
-import json
+import orjson
 
 from .voxelOrgan import VoxelOrgan
 # ==============================================================================
@@ -129,12 +129,12 @@ class VoxelSegmentation:
 
                 data["voxel_organs"].append(dvo)
 
-            f.write(json.dumps(data).encode("utf-8"))
+            f.write(orjson.dumps(data, option=orjson.OPT_SERIALIZE_NUMPY))
 
     @staticmethod
     def read_from_json_gz(filename, without_info=False):
         with gzip.open(filename, "rb") as f:
-            data = json.loads(f.read().decode("utf-8"))
+            data = orjson.loads(f.read().decode("utf-8"))
             # data = ast.literal_eval(f.read())
 
             vms = VoxelSegmentation(data["voxels_size"])

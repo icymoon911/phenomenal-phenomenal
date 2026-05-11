@@ -152,15 +152,14 @@ def from_vtk_poly_data_to_vertices_faces(vtk_poly_data):
         vtk_poly_data.GetPoints().GetData()
     )
 
-    faces = vtkmodules.util.numpy_support.vtk_to_numpy(
-        vtk_poly_data.GetPolys().GetData()
-    )
-
-    faces = faces.reshape((len(faces) // 4, 4))
+    cell_array = vtk_poly_data.GetPolys()
+    connectivity = vtkmodules.util.numpy_support.vtk_to_numpy(cell_array.GetConnectivityArray())
+    # Reconstruct faces (assuming triangles like your original reshape)
+    faces = connectivity.reshape(-1, 3)
 
     colors = vtk_poly_data.GetPointData().GetScalars()
 
-    return vertices, faces[:, 1:], colors
+    return vertices, faces, colors
 
 
 def from_numpy_matrix_to_vtk_image_data(data_matrix):
