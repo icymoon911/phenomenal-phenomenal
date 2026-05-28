@@ -10,16 +10,63 @@
 
 
 # ==============================================================================
-
-
 class ImageView:
+    """Container associating an image with its geometric projection.
+
+    Attributes:
+        image:
+            Image array associated with a camera/view configuration.
+        projection:
+            Projection object/function returned by the calibration model for
+            the corresponding camera and angle.
+        integral:
+            Optional cached integral image representation. Initialized to
+            ``None`` and can be computed later for performance purposes.
+    """
+
     def __init__(self, image, projection):
+        """Initialize an ImageView instance.
+
+        Args:
+            image:
+                Input image array.
+            projection:
+                Projection object/function describing the mapping associated
+                with the image acquisition setup.
+        """
         self.image = image
         self.projection = projection
         self.integral = None
 
 
 def iter_image_paths(image_paths, imread, cameras=None, angles=None):
+    """Iterate over images stored as file paths.
+
+    Args:
+        image_paths:
+            Nested dictionary mapping camera identifiers and angles to image
+            file paths::
+
+                {
+                    camera_id: {
+                        angle: image_path,
+                        ...
+                    },
+                    ...
+                }
+
+        imread:
+            Callable used to read an image from a file path.
+        cameras:
+            Optional iterable of camera identifiers to filter.
+            If ``None``, all cameras are used.
+        angles:
+            Optional iterable of view angles to filter.
+            If ``None``, all angles are used.
+
+    Yields:
+        Tuples ``(camera_id, angle, image_array)`` for each selected image.
+    """
 
     if cameras is not None:
         cameras = set(cameras)
@@ -41,6 +88,31 @@ def iter_image_paths(image_paths, imread, cameras=None, angles=None):
 
 
 def iter_images(images, cameras=None, angles=None):
+    """Iterate over an in-memory image dictionary.
+
+    Args:
+        images:
+            Nested dictionary mapping camera identifiers and angles to image
+            arrays::
+
+                {
+                    camera_id: {
+                        angle: image_array,
+                        ...
+                    },
+                    ...
+                }
+
+        cameras:
+            Optional iterable of camera identifiers to filter.
+            If ``None``, all cameras are used.
+        angles:
+            Optional iterable of view angles to filter.
+            If ``None``, all angles are used.
+
+    Yields:
+        Tuples ``(camera_id, angle, image_array)`` for each selected image.
+    """
 
     if cameras is not None:
         cameras = set(cameras)
@@ -62,16 +134,25 @@ def iter_images(images, cameras=None, angles=None):
 
 
 def as_image_views(images_iterator, calibration):
-    """Create an ImageView dict from images dict and calibration object
+    """Convert an image iterator into a dictionary of ImageView objects.
 
     Args:
-        - images_iterator : a (camera_id, angle, image_array) iterator. See iter_images
-            or iter_image_paths in openalea.phenomenal.object.
-        - calibration: a phenomenal.calibration.Calibration object
+        images_iterator:
+            Iterator yielding ``(camera_id, angle, image_array)`` tuples.
+            Typically created with :func:`iter_images` or
+            :func:`iter_image_paths`.
+        calibration:
+            Calibration object providing the method
+            ``get_projection(camera_id, angle)``.
 
     Returns:
-        a {f'{camera_id}_{view_angle}': openalea.phenomenal.object.ImageView, ...} dict
+        Dictionary mapping ``"{camera_id}_{angle}"`` keys to
+        :class:`ImageView` instances.
 
+    Example:
+        >>> iterator = iter_images(images)
+        >>> image_views = as_image_views(iterator, calibration)
+        >>> image_views["side_0"]
     """
     im_views = dict()
     for id_camera, angle, image in images_iterator:
