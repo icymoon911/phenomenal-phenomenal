@@ -1,5 +1,5 @@
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1436634.svg)](https://doi.org/10.5281/zenodo.1436634)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18391755.svg)](https://doi.org/10.5281/zenodo.18391755)
 [![Licence](https://anaconda.org/openalea/openalea.phenomenal/badges/license.svg)](https://cecill.info/licences/Licence_CeCILL_V1.1-US.txt)
 [![Platform](https://anaconda.org/openalea3/openalea.phenomenal/badges/platforms.svg)](https://anaconda.org/openalea3/openalea.phenomenal)
 [![Last version](https://anaconda.org/openalea3/openalea.phenomenal/badges/version.svg)](https://anaconda.org/OpenAlea3/openalea.phenomenal/files)
@@ -110,16 +110,15 @@ If you find our work useful in your research, please consider citing:
 If you use PhenoTrack3D in your research, cite:
 
 Daviet, B., Fernandez, R., Cabrera-Bosquet, L. et al. PhenoTrack3D: an automatic high-throughput phenotyping pipeline to track maize organs over time. Plant Methods 18, 130 (2022). [https://doi.org/10.1186/s13007-022-00961-4](https://doi.org/10.1186/s13007-022-00961-4)
-    
-```latex
-@article {daviet22,
-	title={PhenoTrack3D: an automatic high-throughput phenotyping pipeline to track maize organs over time},
-	author={Daviet, Benoit and Fernandez, Romain and Cabrera-Bosquet, Lloren{\c{c}} and Pradal, Christophe and Fournier, Christian},
-	journal={Plant Methods},
-	volume={18},
-	number={1},
-	pages={1--14},
-	year={2022},
-	publisher={Springer}
-}
+
+    @article {daviet22,
+        title={PhenoTrack3D: an automatic high-throughput phenotyping pipeline to track maize organs over time},
+        author={Daviet, Benoit and Fernandez, Romain and Cabrera-Bosquet, Lloren{\c{c}} and Pradal, Christophe and Fournier, Christian},
+        journal={Plant Methods},
+        volume={18},
+        number={1},
+        pages={1--14},
+        year={2022},
+        publisher={Springer}
+    }
 ```
