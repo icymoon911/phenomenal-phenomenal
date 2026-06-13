@@ -291,9 +291,91 @@ def maize_mature_leaf_analysis(vo, voxels_size, stem_vector_mean, distance_plane
 def maize_growing_leaf_analysis_real_length(maize_segmented, vo):
     voxels = maize_segmented.get_voxels_position(except_organs=[vo])
     longest_polyline = vo.get_longest_segment().polyline
-    voxels = set(voxels).intersection(longest_polyline)
-    z = numpy.max(numpy.array(list(voxels))[:, 2])
+    shared = set(voxels).intersection(longest_polyline)
+
+    if not shared:
+        # This growing leaf does not share a single voxel with the rest of the
+        # plant (an isolated / degenerate topology). ``numpy.max`` on an empty
+        # array would raise, so we fall back to the highest node of its own
+        # polyline. The returned value is only used to order growing leaves, so
+        # this keeps the ordering well defined instead of crashing the whole
+        # analysis.
+        points = numpy.array(list(longest_polyline))
+    else:
+        points = numpy.array(list(shared))
+
+    z = numpy.max(points[:, 2])
     return z
+
+
+# Minimum number of polyline nodes a growing-leaf blade must keep for
+# ``organ_analysis`` to produce meaningful metrics (insertion angle needs >= 4).
+_MIN_GROWING_LEAF_BLADE_NODES = 4
+
+
+def growing_leaf_real_index_position_base(polyline, voxels):
+    """Locate the boundary between a growing leaf pseudo-stem and its blade.
+
+    The *pseudo-stem* of a growing leaf is the part of its polyline that is
+    still bundled with the stem (or with leaves analysed earlier). Those shared
+    voxels form a run anchored at the *base* of the polyline (``polyline[0]``);
+    the emerged blade is everything past that run.
+
+    The previous implementation simply kept the highest polyline index that
+    intersected ``voxels``. When two leaves touch each other by their tips, the
+    current leaf shares a voxel near its *tip* with another organ, so that
+    highest index jumped close to the end of the polyline, the blade collapsed
+    to a single node and the reported leaf length became ``0``. To avoid this we
+    only trust the *leading contiguous run* of shared nodes, mirroring
+    :meth:`VoxelOrgan.get_real_index_position_base` which applies the same
+    contiguity rule from the tip side.
+
+    Parameters
+    ----------
+    polyline : list
+        Ordered polyline nodes. ``polyline[0]`` is the base, ``polyline[-1]``
+        the tip.
+    voxels : iterable
+        Voxel positions shared with the stem and the already-processed organs.
+
+    Returns
+    -------
+    index_position_base : int
+        Index of the last node of the leading contiguous pseudo-stem run.
+    diagnostic : dict
+        Information about how the boundary was found. See
+        :func:`maize_growing_leaf_analysis`.
+    """
+    shared = set(polyline).intersection(set(voxels))
+
+    # Walk from the base and keep only the contiguous run of shared nodes. Stop
+    # at the first node that is not shared: anything shared *after* a gap is a
+    # connection artifact (typically two leaf tips touching) and must not be
+    # mistaken for pseudo-stem.
+    index_position_base = 0
+    for i, node in enumerate(polyline):
+        if node in shared:
+            index_position_base = i
+        else:
+            break
+
+    # A shared node located after the leading run means the leaf is connected to
+    # another organ somewhere above its base (tip-to-tip being the usual case).
+    # This is exactly what the old code latched onto to zero the length, so we
+    # surface it as a diagnostic instead of silently mis-trimming.
+    tip_connection_detected = any(
+        node in shared for node in polyline[index_position_base + 1 :]
+    )
+
+    diagnostic = {
+        "method": "contiguous_base_run",
+        "index_position_base": index_position_base,
+        "polyline_length_nodes": len(polyline),
+        "n_shared_nodes": len(shared),
+        "tip_connection_detected": bool(tip_connection_detected),
+    }
+
+    return index_position_base, diagnostic
 
 
 def maize_growing_leaf_analysis(
@@ -319,22 +401,45 @@ def maize_growing_leaf_analysis(
     )
 
     # ==========================================================================
-    # Compute extremity
-    voxels = list(set(polyline).intersection(set(voxels)))
+    # Compute extremity (boundary between pseudo-stem and emerged blade).
+    # Only the leading contiguous shared run is treated as pseudo-stem so that a
+    # tip connection with another organ can no longer collapse the blade.
+    index_position_base, length_diagnostic = growing_leaf_real_index_position_base(
+        polyline, voxels
+    )
 
-    index_position_base = 0
-    for i, node in enumerate(polyline):
-        if node in voxels:
-            index_position_base = i
+    # Degenerate-topology guard: if trimming the pseudo-stem would leave too few
+    # nodes to measure (e.g. the leaf is almost entirely bundled, or its base
+    # run reaches the tip), keep the whole polyline rather than reporting a 0 /
+    # ``None`` length. The (small) pseudo-stem over-count is recorded in the
+    # diagnostic and the pseudo-stem length is reported separately anyway.
+    fallback_used = False
+    fallback_reason = None
+    if (len(polyline) - index_position_base) < _MIN_GROWING_LEAF_BLADE_NODES:
+        fallback_used = True
+        fallback_reason = "blade_too_short_after_trim"
+        index_position_base = 0
 
     real_polyline = polyline[index_position_base:]
     real_closest_nodes = closest_nodes[index_position_base:]
 
     vo = organ_analysis(vo, real_polyline, real_closest_nodes, stem_vector_mean)
 
+    length_diagnostic["fallback_used"] = fallback_used
+    length_diagnostic["fallback_reason"] = fallback_reason
+
     if vo is not None:
-        vo.info["pm_length_speudo_stem"] = (
-            vo.info["pm_length_with_speudo_stem"] - vo.info["pm_length"]
+        length_diagnostic["real_length"] = vo.info.get("pm_length")
+        length_diagnostic["full_length"] = vo.info.get("pm_full_length")
+        vo.info["pm_length_diagnostic"] = length_diagnostic
+
+        # Clamp to >= 0: in a fallback the blade length can momentarily exceed
+        # ``pm_length_with_speudo_stem`` (computed from a slightly shorter
+        # polyline), which would otherwise yield a nonsensical negative
+        # pseudo-stem length and bias plant statistics.
+        vo.info["pm_length_speudo_stem"] = max(
+            0.0,
+            vo.info["pm_length_with_speudo_stem"] - vo.info["pm_length"],
         )
 
     return vo
@@ -400,7 +505,12 @@ def maize_analysis(maize_segmented):
 
     voxels = vo_stem.voxels_position()
     for vo, _ in growing_leafs:
-        # TODO : bug here when two leaf are connected by the tips, the length is directly 0
+        # Tip connections (two leaves touching by their tips, a leaf tip folding
+        # back onto the stem, ...) used to collapse the blade and report a 0
+        # length here. maize_growing_leaf_analysis now only trims the leading
+        # contiguous pseudo-stem run and records a diagnostic in
+        # ``vo.info["pm_length_diagnostic"]`` (see
+        # growing_leaf_real_index_position_base).
         vo = maize_growing_leaf_analysis(
             vo, voxels_size, vo_stem.info["pm_vector_mean"], voxels
         )
