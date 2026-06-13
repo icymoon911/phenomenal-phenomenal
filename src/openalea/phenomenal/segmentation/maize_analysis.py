@@ -9,6 +9,7 @@
 # ==============================================================================
 from __future__ import print_function, absolute_import
 
+import logging
 import math
 import numpy
 import scipy.integrate
@@ -17,6 +18,8 @@ from .plane_interception import (
     intercept_points_along_path_with_planes,
     max_distance_in_points,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
@@ -292,8 +295,105 @@ def maize_growing_leaf_analysis_real_length(maize_segmented, vo):
     voxels = maize_segmented.get_voxels_position(except_organs=[vo])
     longest_polyline = vo.get_longest_segment().polyline
     voxels = set(voxels).intersection(longest_polyline)
+    if not voxels:
+        # No intersection with other organs — fall back to polyline tip height
+        logger.debug(
+            "growing_leaf real_length: no intersection with other organs, "
+            "falling back to polyline tip z"
+        )
+        return numpy.max(numpy.array(list(longest_polyline))[:, 2])
     z = numpy.max(numpy.array(list(voxels))[:, 2])
     return z
+
+
+def _find_growing_leaf_base_and_tip(polyline, voxels):
+    """Determine the base and tip indices for a growing-leaf polyline while
+    distinguishing between a normal stem/base connection and an artefactual
+    tip-to-tip connection with a previously processed leaf.
+
+    The polyline is assumed to run from *tip* (index 0) toward *base*
+    (highest index), consistent with how ``VoxelSegment`` polylines are
+    constructed during segmentation.
+
+    Parameters
+    ----------
+    polyline : list[tuple]
+        The full polyline of the growing leaf.
+    voxels : set[tuple]
+        Accumulated voxels (stem ∪ previously processed growing leaves).
+
+    Returns
+    -------
+    base_idx : int
+        Start index of the usable portion of the polyline (base side).
+    tip_idx : int
+        End index (exclusive upper bound) of the usable portion (tip side).
+    has_base_connection : bool
+    has_tip_connection : bool
+    """
+    n = len(polyline)
+    if n == 0:
+        return 0, 0, False, False
+
+    polyline_set = set(polyline)
+    shared = polyline_set.intersection(voxels)
+    if not shared:
+        return 0, n, False, False
+
+    # ------------------------------------------------------------------
+    # Base detection — walk from the END (base side) backward.
+    # A contiguous run of shared voxels at the tail is the base/stem
+    # connection.  We restrict the search to the last third of the
+    # polyline so that tip-side artefacts cannot be mistaken for a base.
+    # ------------------------------------------------------------------
+    base_idx = n
+    has_base_connection = False
+    search_start = max(0, n - max(n // 3, 3))
+    for i in range(n - 1, search_start - 1, -1):
+        if polyline[i] in voxels:
+            base_idx = i
+            has_base_connection = True
+        elif has_base_connection:
+            break  # exited the contiguous base region
+
+    # Fallback: if no base found in the restricted range, scan the full
+    # polyline (this handles very short polylines or unusual topologies).
+    if not has_base_connection:
+        for i in range(n - 1, -1, -1):
+            if polyline[i] in voxels:
+                base_idx = i
+                has_base_connection = True
+            elif has_base_connection:
+                break
+
+    # ------------------------------------------------------------------
+    # Tip connection detection — check the START (tip side).
+    # A contiguous run of shared voxels at the head indicates a
+    # tip-to-tip connection with a previously processed leaf.
+    # ------------------------------------------------------------------
+    tip_idx = 0
+    has_tip_connection = False
+    tip_search_end = min(n, max(n // 3, 3))
+    for i in range(tip_search_end):
+        if polyline[i] in voxels:
+            tip_idx = i + 1
+            has_tip_connection = True
+        else:
+            break
+
+    # ------------------------------------------------------------------
+    # Sanity: if the two regions overlap, the leaf is mostly inside the
+    # accumulated voxels — report both flags but let the caller decide
+    # how to fall back.
+    # ------------------------------------------------------------------
+    if has_base_connection and has_tip_connection and base_idx <= tip_idx:
+        logger.debug(
+            "growing_leaf: base/tip regions overlap "
+            "(base_idx=%d, tip_idx=%d, n=%d) — leaf mostly embedded",
+            base_idx, tip_idx, n,
+        )
+
+    return base_idx, tip_idx, has_base_connection, has_tip_connection
 
 
 def maize_growing_leaf_analysis(
@@ -304,6 +404,7 @@ def maize_growing_leaf_analysis(
     vo.info["pm_full_length"] = compute_length_organ(polyline)
 
     if len(polyline) <= 1:
+        vo.info["pm_diagnostic_zero_length_reason"] = "polyline_too_short"
         return vo
 
     real_longest_polyline = vo.real_longest_polyline()
@@ -319,25 +420,71 @@ def maize_growing_leaf_analysis(
     )
 
     # ==========================================================================
-    # Compute extremity
-    voxels = list(set(polyline).intersection(set(voxels)))
+    # Robust base / tip detection.
+    #
+    # The old code did:
+    #     for i, node in enumerate(polyline):
+    #         if node in voxels: index_position_base = i
+    # which picks the *last* intersection.  When two growing leaves are
+    # connected by their tips, the second leaf sees the first leaf's tip
+    # voxels in the accumulated set, and the "last intersection" jumps to
+    # the tip end → real_polyline collapses to 0-1 points → length = 0.
+    #
+    # The new approach walks from the base end backward (for the base
+    # connection) and separately detects a tip-side artefact, trimming
+    # each end independently.
+    # ==========================================================================
+    n = len(polyline)
+    base_idx, tip_idx, has_base, has_tip = _find_growing_leaf_base_and_tip(
+        polyline, voxels
+    )
 
-    index_position_base = 0
-    for i, node in enumerate(polyline):
-        if node in voxels:
-            index_position_base = i
+    vo.info["pm_has_base_connection"] = has_base
+    vo.info["pm_has_tip_connection"] = has_tip
 
-    real_polyline = polyline[index_position_base:]
-    real_closest_nodes = closest_nodes[index_position_base:]
+    # Build the usable polyline: trim base-side pseudo-stem and tip-side
+    # artefact independently.
+    start = base_idx if has_base else 0
+    end = tip_idx if has_tip else n
 
-    vo = organ_analysis(vo, real_polyline, real_closest_nodes, stem_vector_mean)
+    # Overlap / inversion guard: if both ends met in the middle, the
+    # polyline is entirely inside the accumulated voxels.  Fall back to
+    # using the full polyline rather than returning an empty one.
+    if start >= end or (end - start) <= 1:
+        logger.debug(
+            "growing_leaf: trimmed polyline too short (start=%d, end=%d, n=%d); "
+            "falling back to full polyline",
+            start, end, n,
+        )
+        vo.info["pm_diagnostic_fallback"] = "full_polyline"
+        start, end = 0, n
 
-    if vo is not None:
-        vo.info["pm_length_speudo_stem"] = (
-            vo.info["pm_length_with_speudo_stem"] - vo.info["pm_length"]
+    real_polyline = polyline[start:end]
+    real_closest_nodes = closest_nodes[start:end]
+
+    result = organ_analysis(vo, real_polyline, real_closest_nodes, stem_vector_mean)
+
+    # ------------------------------------------------------------------
+    # Fallback: if organ_analysis still returned None (e.g. all widths
+    # are degenerate), retry with the full polyline as a last resort.
+    # ------------------------------------------------------------------
+    if result is None and (start != 0 or end != n):
+        logger.debug(
+            "growing_leaf: organ_analysis returned None on trimmed polyline "
+            "(len=%d); retrying with full polyline (len=%d)",
+            len(real_polyline), n,
+        )
+        vo.info["pm_diagnostic_fallback"] = "full_polyline_retry"
+        real_polyline = polyline
+        real_closest_nodes = closest_nodes
+        result = organ_analysis(vo, real_polyline, real_closest_nodes, stem_vector_mean)
+
+    if result is not None:
+        result.info["pm_length_speudo_stem"] = (
+            result.info["pm_length_with_speudo_stem"] - result.info["pm_length"]
         )
 
-    return vo
+    return result
 
 
 def maize_analysis(maize_segmented):
@@ -400,7 +547,9 @@ def maize_analysis(maize_segmented):
 
     voxels = vo_stem.voxels_position()
     for vo, _ in growing_leafs:
-        # TODO : bug here when two leaf are connected by the tips, the length is directly 0
+        # Fixed: previously when two leaves were connected by the tips,
+        # the length was directly 0.  _find_growing_leaf_base_and_tip
+        # now distinguishes base connections from tip-to-tip artefacts.
         vo = maize_growing_leaf_analysis(
             vo, voxels_size, vo_stem.info["pm_vector_mean"], voxels
         )
