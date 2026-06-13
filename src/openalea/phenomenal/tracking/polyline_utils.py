@@ -1,7 +1,14 @@
+"""Geometry helpers operating on 3D polylines (n x 3 arrays).
+
+Pure, stateless utilities shared by the scoring and post-processing stages. No
+tunable lives here; behaviour depends only on the polyline geometry.
+"""
+
 import numpy as np
 
 
 def polyline_length(pl):
+    """Total curvilinear length of a polyline (sum of segment lengths)."""
     return np.sum(
         [
             np.linalg.norm(np.array(pl[k]) - np.array(pl[k + 1]))
@@ -11,6 +18,11 @@ def polyline_length(pl):
 
 
 def polyline_quantile_coordinate(pl, q):
+    """Coordinate of the point located at curvilinear quantile ``q`` in [0, 1].
+
+    ``q = 0`` returns the first point, ``q = 1`` the last; intermediate values
+    are linearly interpolated along the polyline by arc length.
+    """
     pl = np.array(pl)
     d = np.diff(pl, axis=0)
     segdists = np.sqrt((d**2).sum(axis=1))
@@ -29,8 +41,13 @@ def polyline_quantile_coordinate(pl, q):
 
 
 def polyline_until_z(pl, z):
-    """return the polyline section starting from height z"""
-    # TODO : it's approximate
+    """Return the polyline section located above height ``z``.
+
+    The cut is done at vertex granularity: the returned section starts at the
+    first vertex whose ``z`` coordinate is strictly greater than ``z`` (it does
+    not interpolate a vertex exactly at height ``z``). If the whole polyline is
+    at or below ``z``, it is returned unchanged.
+    """
     if np.max(np.array(pl)[:, 2]) <= z:
         i = 0
     else:
@@ -39,6 +56,10 @@ def polyline_until_z(pl, z):
 
 
 def polyline_simplification(pl, n):
+    """Resample a polyline to ``n`` points evenly spaced by arc length.
+
+    Polylines with fewer than ``n`` points are returned unchanged (as an array).
+    """
     if len(pl) < n:
         return np.array(pl)
     return np.array([polyline_quantile_coordinate(pl, q) for q in np.linspace(0, 1, n)])
