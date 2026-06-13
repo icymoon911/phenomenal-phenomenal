@@ -83,17 +83,22 @@ class TrackedSnapshot:
     """Describe the plant segmentation at a given time point, particularly
     the order of leaves, which is modified during leaf tracking."""
 
-    def __init__(self, leaves, check):
+    def __init__(self, leaves, check, time=None):
         """
         Parameters
         ----------
         leaves : list(TrackedLeaf)
         check : list(bool)
+        time : float, optional
+            time point of this snapshot. Kept so that tracking results can be
+            exported with their time stamp (see openalea.phenomenal.tracking.export).
         """
 
         self.leaves = leaves
 
         self.check_continuity = check
+
+        self.time = time
 
         # self.sequence gives the ranks of leaves in self.leaves.
         # for example, if self.order[5] = 2, it means that self.leaves[2] is associated to rank 5+1=6.
@@ -170,7 +175,7 @@ class TrackedPlant:
                     var in features for var in ["mature", "azimuth", "height", "length"]
                 )
                 leaves.append(TrackedLeaf(polyline=polyline, features=features))
-            snapshots.append(TrackedSnapshot(leaves, check))
+            snapshots.append(TrackedSnapshot(leaves, check, time=seg["time"]))
 
         return TrackedPlant(snapshots=snapshots)
 
@@ -350,3 +355,35 @@ class TrackedPlant:
         ]
         checks = np.array([snapshot.check_continuity for snapshot in self.snapshots])
         return ranks, features, checks
+
+    def to_records(self, include_unranked=True):
+        """Export tracking results as a list of dict records (long format).
+
+        Thin wrapper around
+        :func:`openalea.phenomenal.tracking.export.tracking_to_records`.
+        """
+        from openalea.phenomenal.tracking.export import tracking_to_records
+
+        return tracking_to_records(self, include_unranked=include_unranked)
+
+    def to_dataframe(self, include_unranked=True):
+        """Export tracking results as a :class:`pandas.DataFrame` (long format).
+
+        Thin wrapper around
+        :func:`openalea.phenomenal.tracking.export.tracking_to_dataframe`.
+        """
+        from openalea.phenomenal.tracking.export import tracking_to_dataframe
+
+        return tracking_to_dataframe(self, include_unranked=include_unranked)
+
+    def to_json(self, path=None, include_unranked=True, indent=2):
+        """Export tracking results as a JSON string (long format).
+
+        Thin wrapper around
+        :func:`openalea.phenomenal.tracking.export.tracking_to_json`.
+        """
+        from openalea.phenomenal.tracking.export import tracking_to_json
+
+        return tracking_to_json(
+            self, path=path, include_unranked=include_unranked, indent=indent
+        )
